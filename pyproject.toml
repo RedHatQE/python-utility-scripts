@@ -21,6 +21,7 @@ packages = [
 
 [tool.poetry.scripts]
 unusedcode = "utility_scripts.unused_code.unused_code:get_unused_functions"
+polarion_tc_requirements = "utility_scripts.polarion.polarion_verify_tc_requirements:has_verify"
 
 
 [tool.poetry.dependencies]

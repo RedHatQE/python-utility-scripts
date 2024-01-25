@@ -21,3 +21,12 @@ e.g to skip running unsedcode check on file pytest_matrix_utils.py, following ca
 ```bash
 pytest_matrix_utils.py
 ```
+
+
+## polarion_tc_requirements
+Helper to see polarion test cases of a pytest repository has associated polarion requirements
+
+### Usage
+```bash
+poetry run polarion_tc_requirements -p <polarion_project_id>
+```
