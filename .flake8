@@ -9,3 +9,6 @@ exclude =
     Pipfile.*,
     docs/*,
     .cache/*
+
+enable-extensions =
+    FCN,
