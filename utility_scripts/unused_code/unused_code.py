@@ -44,7 +44,7 @@ def _iter_functions(tree):
 def get_file_names_to_skip():
     # check if any config file with a list of files to skip checking exists:
     list_to_skip = []
-    skip_config_file = os.path.join(os.path.expanduser("~"), ".config", "unusedcode", "config")
+    skip_config_file = os.path.join(os.path.abspath(os.curdir), ".config", "unusedcode", "config")
     if os.path.exists(skip_config_file):
         with open(skip_config_file) as _file:
             list_to_skip = [line.rstrip() for line in _file]

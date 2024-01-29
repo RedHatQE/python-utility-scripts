@@ -15,9 +15,9 @@ poetry run unusedcode
 ```
 ### Config file
 To skip unused code check on specific files of a repository, a config file with the list of names of such files separated by `\n` should be added to
-`/home/{user}/.config/unusedcode/config`
+`<repo_path>/.config/unusedcode/config`
 
-e.g to skip running unsedcode check on file pytest_matrix_utils.py, following can be added to `/home/{user}/.config/unusedcode/config`
+e.g to skip running unsedcode check on file pytest_matrix_utils.py, following can be added to `<repo_path>/.config/unusedcode/config`
 ```bash
 pytest_matrix_utils.py
 ```
