@@ -16,17 +16,18 @@ license = "Apache License 2.0"
 readme = "README.md"
 
 packages = [
-    { include = "app" },
+    { include = "utility_scripts" },
 ]
 
 [tool.poetry.scripts]
-unusedcode = "app.unused_code.unused_code:get_unused_functions"
+unusedcode = "utility_scripts.unused_code.unused_code:get_unused_functions"
 
 
 [tool.poetry.dependencies]
 python = "^3.8"
 python-simple-logger = "^1.0.8"
 pylero = "^0.0.8"
+ipdb = "^0.13.13"
 
 
 [build-system]

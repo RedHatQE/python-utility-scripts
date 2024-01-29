@@ -5,7 +5,7 @@ import sys
 
 from simple_logger.logger import get_logger
 import urllib3
-from app.utils import all_python_files
+from utility_scripts.utils import all_python_files
 
 urllib3.disable_warnings()
 LOGGER = get_logger(name=__name__)
@@ -41,12 +41,25 @@ def _iter_functions(tree):
             yield elm
 
 
+def get_file_names_to_skip():
+    # check if any config file with a list of files to skip checking exists:
+    list_to_skip = []
+    skip_config_file = os.path.join(os.path.expanduser("~"), ".config", "unusedcode", "config")
+    if os.path.exists(skip_config_file):
+        with open(skip_config_file) as _file:
+            list_to_skip = [line.rstrip() for line in _file]
+    return list_to_skip
+
+
 def get_unused_functions():
     _unused_functions = []
     func_ignore_prefix = ["pytest_"]
-    for py_file in all_python_files("."):
+    file_list_to_skip = get_file_names_to_skip()
+    for py_file in all_python_files():
         LOGGER.info(f"Looking at: {py_file}")
-        if os.path.basename(py_file) == "pytest_matrix_utils.py":
+
+        if file_list_to_skip and os.path.basename(py_file) in file_list_to_skip:
+            LOGGER.warning(f"File {py_file} is being skipped, as indicated in config file")
             continue
 
         with open(py_file) as fd:
