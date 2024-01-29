@@ -4,7 +4,7 @@ import sys
 import click
 from pylero.exceptions import PyleroLibException
 
-from app.polarion.polarion_utils import (
+from utility_scripts.polarion.polarion_utils import (
     get_polarion_ids_from_diff,
     git_diff_added_removed_lines,
 )
