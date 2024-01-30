@@ -2,6 +2,7 @@ import ast
 import os
 import subprocess
 import sys
+import click
 
 from simple_logger.logger import get_logger
 import urllib3
@@ -41,22 +42,21 @@ def _iter_functions(tree):
             yield elm
 
 
-def get_file_names_to_skip():
-    # check if any config file with a list of files to skip checking exists:
-    list_to_skip = []
-    skip_config_file = os.path.join(os.path.abspath(os.curdir), ".config", "unusedcode", "config")
+def get_file_names_to_skip_from_config(config_file_path):
+    skip_config_file = config_file_path or os.path.join(os.path.expanduser("~"), ".config", "python-utility-scripts", "config.yaml")
     if os.path.exists(skip_config_file):
         with open(skip_config_file) as _file:
-            list_to_skip = [line.rstrip() for line in _file]
-    return list_to_skip
+            return [line.rstrip() for line in _file]
 
 
-def get_unused_functions():
+@click.command()
+@click.option("--config-file-path", "-c", help="Provide absolute path to the config file")
+def get_unused_functions(config_file_path):
     _unused_functions = []
     func_ignore_prefix = ["pytest_"]
-    file_list_to_skip = get_file_names_to_skip()
+    file_list_to_skip = get_file_names_to_skip_from_config(config_file_path=config_file_path)
     for py_file in all_python_files():
-        LOGGER.info(f"Looking at: {py_file}")
+        LOGGER.info(f"Checking file: {py_file}")
 
         if file_list_to_skip and os.path.basename(py_file) in file_list_to_skip:
             LOGGER.warning(f"File {py_file} is being skipped, as indicated in config file")

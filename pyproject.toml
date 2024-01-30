@@ -27,9 +27,14 @@ unusedcode = "utility_scripts.unused_code.unused_code:get_unused_functions"
 python = "^3.8"
 python-simple-logger = "^1.0.8"
 pylero = "^0.0.8"
-ipdb = "^0.13.13"
 
+[tool.poetry.group.dev.dependencies]
+ipdb = "^0.13.13"
+ipython = "*"
+
+[tool.poetry-dynamic-versioning.substitution]
+files = ["VERSION"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning"]
+build-backend = "poetry_dynamic_versioning.backend"
