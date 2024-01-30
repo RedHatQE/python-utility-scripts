@@ -43,7 +43,9 @@ def _iter_functions(tree):
 
 
 def get_file_names_to_skip_from_config(config_file_path):
-    skip_config_file = config_file_path or os.path.join(os.path.expanduser("~"), ".config", "python-utility-scripts", "config.yaml")
+    skip_config_file = config_file_path or os.path.join(
+        os.path.expanduser("~"), ".config", "python-utility-scripts", "config.yaml"
+    )
     if os.path.exists(skip_config_file):
         with open(skip_config_file) as _file:
             return [line.rstrip() for line in _file]
