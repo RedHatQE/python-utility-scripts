@@ -17,15 +17,15 @@ git clone https://github.com/RedHatQE/python-utility-scripts.git
 poetry install
 ```
 
-# Scripts
-## unusedcode
+## Scripts
+### unusedcode
 Helper to identify unused code in a pytest repository. It should be run from inside the test repository using this tool.
 
-### Usage
+#### Usage
 ```bash
 poetry run unusedcode
 ```
-### Config file
+#### Config file
 To skip unused code check on specific files of a repository, a config file with the list of names of such files, separated by `\n` should be added to
 `~/.config/python-utility-scripts/config.yaml`
 
