@@ -9,18 +9,19 @@ exclude = [".git", ".venv", ".mypy_cache", ".tox", "__pycache__"]
 
 [tool.poetry]
 name = "python-utility-scripts"
-version = "0.0.1"
+version = "0.0.0"
 description = "Python utility scripts"
 authors = ["dbasunag <dbasunag@redhat.com>"]
 license = "Apache License 2.0"
 readme = "README.md"
+repository = "https://github.com/RedHatQE/python-utility-scripts"
 
 packages = [
     { include = "utility_scripts" },
 ]
 
 [tool.poetry.scripts]
-unusedcode = "utility_scripts.unused_code.unused_code:get_unused_functions"
+pyutil-unusedcode = "utility_scripts.unused_code.unused_code:get_unused_functions"
 
 
 [tool.poetry.dependencies]

@@ -3,9 +3,11 @@ import os
 import subprocess
 import sys
 import click
-
+import yaml
 from simple_logger.logger import get_logger
 import urllib3
+
+from utility_scripts.click_list_type import ListParamType
 from utility_scripts.utils import all_python_files
 
 urllib3.disable_warnings()
@@ -42,33 +44,55 @@ def _iter_functions(tree):
             yield elm
 
 
-def get_file_names_to_skip_from_config(config_file_path):
+def get_exclude_list_from_config_file(config_file_path):
     skip_config_file = config_file_path or os.path.join(
         os.path.expanduser("~"), ".config", "python-utility-scripts", "config.yaml"
     )
     if os.path.exists(skip_config_file):
         with open(skip_config_file) as _file:
-            return [line.rstrip() for line in _file]
+            return yaml.safe_load(_file).get("unusedcode")
 
 
 @click.command()
-@click.option("--config-file-path", "-c", help="Provide absolute path to the config file")
-def get_unused_functions(config_file_path):
+@click.option(
+    "--config-file-path",
+    help="Provide absolute path to the config file or save one at "
+    "~/.config/python-utility-scripts/config.yaml."
+    "Any option in YAML file will override the CLI option",
+    type=click.Path(),
+)
+@click.option(
+    "--exclude-file-list", default=None, help="Provide a comma-separated list of files to exclude", type=ListParamType()
+)
+@click.option(
+    "--exclude-function-prefixes",
+    default=None,
+    help="Provide a comma-separated list of function prefixes to exclude",
+    type=ListParamType(),
+)
+def get_unused_functions(config_file_path, exclude_file_list, exclude_function_prefixes):
     _unused_functions = []
-    func_ignore_prefix = ["pytest_"]
-    file_list_to_skip = get_file_names_to_skip_from_config(config_file_path=config_file_path)
+    skip_config = get_exclude_list_from_config_file(config_file_path=config_file_path) or {}
+    func_ignore_prefix = skip_config.get("exclude_function_prefix") or exclude_function_prefixes
+    file_ignore_list = skip_config.get("exclude_files") or exclude_file_list
     for py_file in all_python_files():
         LOGGER.info(f"Checking file: {py_file}")
 
-        if file_list_to_skip and os.path.basename(py_file) in file_list_to_skip:
-            LOGGER.warning(f"File {py_file} is being skipped, as indicated in config file")
+        if file_ignore_list and os.path.basename(py_file) in file_ignore_list:
+            LOGGER.warning(f"File {py_file} is being skipped.")
             continue
 
         with open(py_file) as fd:
             tree = ast.parse(source=fd.read())
 
         for func in _iter_functions(tree=tree):
-            if [func.name for ignore_prefix in func_ignore_prefix if func.name.startswith(ignore_prefix)]:
+            ignore_functions = (
+                [func.name for ignore_prefix in func_ignore_prefix if func.name.startswith(ignore_prefix)]
+                if func_ignore_prefix
+                else []
+            )
+            if ignore_functions:
+                LOGGER.warning(f"functions {ignore_functions} are being skipped.")
                 continue
 
             if is_fixture_autouse(func=func):
