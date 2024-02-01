@@ -15,13 +15,19 @@ authors = ["dbasunag <dbasunag@redhat.com>"]
 license = "Apache License 2.0"
 readme = "README.md"
 repository = "https://github.com/RedHatQE/python-utility-scripts"
+homepage = "https://github.com/RedHatQE/python-utility-scripts"
+documentation = "https://github.com/RedHatQE/python-utility-scripts/blob/main/README.md"
+classifiers = [
+"Programming Language :: Python :: 3",
+"Operating System :: OS Independent",
+]
 
 packages = [
-    { include = "utility_scripts" },
+    { include = "apps" },
 ]
 
 [tool.poetry.scripts]
-pyutil-unusedcode = "utility_scripts.unused_code.unused_code:get_unused_functions"
+pyappsutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
 
 
 [tool.poetry.dependencies]

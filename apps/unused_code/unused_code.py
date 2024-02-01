@@ -1,14 +1,13 @@
 import ast
 import os
 import subprocess
-import sys
 import click
 import yaml
 from simple_logger.logger import get_logger
 import urllib3
 
-from utility_scripts.click_list_type import ListParamType
-from utility_scripts.utils import all_python_files
+from apps.click_list_type import ListParamType
+from apps.utils import all_python_files
 
 urllib3.disable_warnings()
 LOGGER = get_logger(name=__name__)
@@ -44,37 +43,36 @@ def _iter_functions(tree):
             yield elm
 
 
-def get_exclude_list_from_config_file(config_file_path):
+def read_config_file(config_file_path):
+    if config_file_path and not os.path.exists(config_file_path):
+        LOGGER.error(f"{config_file_path} file does not exist.")
+        raise click.Abort()
     skip_config_file = config_file_path or os.path.join(
         os.path.expanduser("~"), ".config", "python-utility-scripts", "config.yaml"
     )
     if os.path.exists(skip_config_file):
         with open(skip_config_file) as _file:
-            return yaml.safe_load(_file).get("unusedcode")
+            return yaml.safe_load(_file)
 
 
 @click.command()
 @click.option(
     "--config-file-path",
-    help="Provide absolute path to the config file or save one at "
-    "~/.config/python-utility-scripts/config.yaml."
-    "Any option in YAML file will override the CLI option",
+    help="Provide absolute path to the config file. Any CLI option(s) would override YAML file",
     type=click.Path(),
 )
-@click.option(
-    "--exclude-file-list", default=None, help="Provide a comma-separated list of files to exclude", type=ListParamType()
-)
+@click.option("--exclude-file-list", help="Provide a comma-separated list of files to exclude", type=ListParamType())
 @click.option(
     "--exclude-function-prefixes",
-    default=None,
     help="Provide a comma-separated list of function prefixes to exclude",
     type=ListParamType(),
 )
 def get_unused_functions(config_file_path, exclude_file_list, exclude_function_prefixes):
     _unused_functions = []
-    skip_config = get_exclude_list_from_config_file(config_file_path=config_file_path) or {}
-    func_ignore_prefix = skip_config.get("exclude_function_prefix") or exclude_function_prefixes
-    file_ignore_list = skip_config.get("exclude_files") or exclude_file_list
+    config_yaml = read_config_file(config_file_path=config_file_path)
+    unused_code = config_yaml.get("pyappsutils-unusedcode", {})
+    func_ignore_prefix = exclude_function_prefixes or unused_code.get("exclude_function_prefix") or []
+    file_ignore_list = exclude_file_list or unused_code.get("exclude_files") or []
     for py_file in all_python_files():
         LOGGER.info(f"Checking file: {py_file}")
 
@@ -110,7 +108,7 @@ def get_unused_functions(config_file_path, exclude_file_list, exclude_function_p
                 )
     if _unused_functions:
         LOGGER.error("\n".join(_unused_functions))
-        sys.exit(1)
+        raise click.Abort()
 
 
 if __name__ == "__main__":

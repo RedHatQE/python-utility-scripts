@@ -1,13 +1,11 @@
-# pyutils-unusedcode:
+# pyappsutils-unusedcode
 Helper to identify unused code in a pytest repository. It should be run from inside the test repository using this tool.
 
 ## Usage
 
 ```bash
-poetry run pyutils pyutils-unusedcode
-poetry run pyutils pyutils-unusedcode --config-file-path <absolute_path_to_config_yaml>
-poetry run pyutils pyutils-unusedcode --exclude-file-list "my_exclude_file1.py,my_exclude_file2.py"
-poetry run pyutils pyutils-unusedcode --exclude-function-prefixes "my_exclude_prefix1,my_exclude_prefix2"
+pyappsutils-unusedcode
+pyappsutils-unusedcode --help
 ```
 
 ## Config file
@@ -17,7 +15,7 @@ To skip unused code check on specific files or functions of a repository, a conf
 ### Example:
 
 ```yaml
-pyutils-unusedcode:
+pyappsutils-unusedcode:
   exclude_files:
   - "my_exclude_file.py"
   exclude_function_prefix:
