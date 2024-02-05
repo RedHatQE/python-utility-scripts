@@ -4,7 +4,7 @@ Repository for various python utility scripts
 ## Installation
 
 ```bash
-pip3 install python-utility-scripts
+pip3 install python-utility-scripts --user
 ```
 
 ## Local run
