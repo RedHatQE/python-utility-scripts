@@ -64,7 +64,7 @@ def read_config_file(config_file_path):
 @click.option("--exclude-file-list", help="Provide a comma-separated list of files to exclude", type=ListParamType())
 @click.option(
     "--exclude-function-prefixes",
-    help="Provide a comma-separated list of function prefixes to exclude",
+    help="Provide a comma-separated string of function prefixes to exclude",
     type=ListParamType(),
 )
 def get_unused_functions(config_file_path, exclude_file_list, exclude_function_prefixes):
