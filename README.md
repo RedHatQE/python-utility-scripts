@@ -1,5 +1,6 @@
 # python-utility-scripts
 Repository for various python utility scripts
+* [pyappsutils-unusedcode](https://github.com/RedHatQE/python-utility-scripts/blob/main/README.md)
 
 ## Installation
 
@@ -24,9 +25,6 @@ poetry install
 A config yaml file for various utilities of this repository should be added to
 `~/.config/python-utility-scripts/config.yaml`. Script specific config section details can be found in associated script README.md
 
-
-## Scripts
-* [pyappsutils-unusedcode](https://github.com/RedHatQE/python-utility-scripts/blob/main/README.md)
 
 ## Release new version
 ### requirements:
