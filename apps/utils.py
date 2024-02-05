@@ -6,6 +6,7 @@ import click
 LOGGER = get_logger(name=__name__)
 
 
+# Reference: https://gist.github.com/welel/9cf860dd3f4d3e09f9b4305878b3a04e
 class ListParamType(click.ParamType):
     """Represents the list type of a CLI parameter.
 
