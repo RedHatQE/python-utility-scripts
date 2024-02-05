@@ -61,7 +61,7 @@ def read_config_file(config_file_path):
     help="Provide absolute path to the config file. Any CLI option(s) would override YAML file",
     type=click.Path(),
 )
-@click.option("--exclude-file-list", help="Provide a comma-separated list of files to exclude", type=ListParamType())
+@click.option("--exclude-files", help="Provide a comma-separated string of files to exclude", type=ListParamType())
 @click.option(
     "--exclude-function-prefixes",
     help="Provide a comma-separated string of function prefixes to exclude",
