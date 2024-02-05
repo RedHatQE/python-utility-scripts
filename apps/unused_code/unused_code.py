@@ -71,7 +71,7 @@ def get_unused_functions(config_file_path, exclude_file_list, exclude_function_p
     _unused_functions = []
     config_yaml = read_config_file(config_file_path=config_file_path)
     unused_code = config_yaml.get("pyappsutils-unusedcode", {})
-    func_ignore_prefix = exclude_function_prefixes or unused_code.get("exclude_function_prefix") or []
+    func_ignore_prefix = exclude_function_prefixes or unused_code.get("exclude_function_prefix", [])
     file_ignore_list = exclude_file_list or unused_code.get("exclude_files") or []
     for py_file in all_python_files():
         LOGGER.info(f"Checking file: {py_file}")
