@@ -101,7 +101,9 @@ def get_unused_functions(config_file_path, exclude_files, exclude_function_prefi
                     " not used anywhere in the code.",
                 )
     if _unused_functions:
-        LOGGER.error("\n".join(_unused_functions))
+        message = "\n".join(_unused_functions)
+        LOGGER.error(message)
+        click.echo(message)
         raise click.Abort()
 
 
