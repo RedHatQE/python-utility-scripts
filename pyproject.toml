@@ -40,6 +40,11 @@ openshift-python-utilities = "^5.0.23"
 ipdb = "^0.13.13"
 ipython = "*"
 
+
+
+[tool.poetry.group.test.dependencies]
+pytest = "^8.0.0"
+
 [tool.poetry-dynamic-versioning.substitution]
 files = ["VERSION"]
 

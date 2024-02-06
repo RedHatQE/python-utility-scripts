@@ -41,30 +41,34 @@ def _iter_functions(tree):
 
 
 def read_config_file(config_file_path):
-    util_config_file = config_file_path or os.path.join(
-        os.path.expanduser("~"), ".config", "python-utility-scripts", "config.yaml"
-    )
-    if os.path.exists(util_config_file):
-        with open(util_config_file) as _file:
+    if os.path.exists(config_file_path):
+        with open(config_file_path) as _file:
             return yaml.safe_load(_file)
     return {}
 
 
-def get_ignore_function_list(ignore_prefix_list, function):
-    if ignore_prefix_list:
-        return [function.name for ignore_prefix in ignore_prefix_list if function.name.startswith(ignore_prefix)]
+def is_ignore_function_list(ignore_prefix_list, function):
+    ignore_function_lists = [
+        function.name for ignore_prefix in ignore_prefix_list if function.name.startswith(ignore_prefix)
+    ]
+    if ignore_function_lists:
+        LOGGER.warning(f"Following functions are getting skipped {ignore_prefix_list}: {ignore_function_lists}")
+        return True
 
 
 @click.command()
 @click.option(
     "--config-file-path",
     help="Provide absolute path to the config file. Any CLI option(s) would override YAML file",
-    type=click.Path(exists=True),
+    type=click.Path(),
+    default=os.path.expanduser("~/.config/python-utility-scripts/config.yaml"),
 )
-@click.option("--exclude-files", help="Provide a comma-separated string of files to exclude", type=ListParamType())
+@click.option(
+    "--exclude-files", help="Provide a comma-separated string or list of files to exclude", type=ListParamType()
+)
 @click.option(
     "--exclude-function-prefixes",
-    help="Provide a comma-separated string of function prefixes to exclude",
+    help="Provide a comma-separated string or list of function prefixes to exclude",
     type=ListParamType(),
 )
 def get_unused_functions(config_file_path, exclude_files, exclude_function_prefixes):
@@ -74,7 +78,7 @@ def get_unused_functions(config_file_path, exclude_files, exclude_function_prefi
     func_ignore_prefix = exclude_function_prefixes or unused_code_config.get("exclude_function_prefix", [])
     file_ignore_list = exclude_files or unused_code_config.get("exclude_files", [])
     for py_file in all_python_files():
-        if file_ignore_list and os.path.basename(py_file) in file_ignore_list:
+        if os.path.basename(py_file) in file_ignore_list:
             LOGGER.warning(f"File {py_file} is being skipped.")
             continue
         LOGGER.info(f"Checking file: {py_file}")
@@ -82,9 +86,7 @@ def get_unused_functions(config_file_path, exclude_files, exclude_function_prefi
             tree = ast.parse(source=fd.read())
 
         for func in _iter_functions(tree=tree):
-            ignore_function_list = get_ignore_function_list(ignore_prefix_list=func_ignore_prefix, function=func)
-            if ignore_function_list:
-                LOGGER.warning(f"functions {ignore_function_list} are being skipped.")
+            if func_ignore_prefix and is_ignore_function_list(ignore_prefix_list=func_ignore_prefix, function=func):
                 continue
 
             if is_fixture_autouse(func=func):
@@ -101,9 +103,7 @@ def get_unused_functions(config_file_path, exclude_files, exclude_function_prefi
                     " not used anywhere in the code.",
                 )
     if _unused_functions:
-        message = "\n".join(_unused_functions)
-        LOGGER.error(message)
-        click.echo(message)
+        click.echo("\n".join(_unused_functions))
         raise click.Abort()
 
 
