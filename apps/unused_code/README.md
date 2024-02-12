@@ -26,11 +26,11 @@ This would exclude any functions with prefix my_exclude_function_prefix and file
 To run from CLI with `--exclude-function-prefixes`
 
 ```bash
-pyappsutils-unusedcode --exclude-function-prefixes '["my_exclude_function1","my_exclude_function2"]'
+pyappsutils-unusedcode --exclude-function-prefixes 'my_exclude_function1,my_exclude_function2'
 ```
 
 To run from CLI with `--exclude-files`
 
 ```bash
-pyappsutils-unusedcode --exclude-files '["my_exclude_file1.py","my_exclude_file2.py"]'
+pyappsutils-unusedcode --exclude-files 'my_exclude_file1.py,my_exclude_file2.py'
 ```
