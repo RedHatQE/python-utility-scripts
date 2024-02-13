@@ -1,32 +1,55 @@
 # python-utility-scripts
-Repository for various utility scripts
+Repository for various python utility scripts
+* [pyappsutils-unusedcode](https://github.com/RedHatQE/python-utility-scripts/blob/main/README.md)
 
-# Installation:
-```bash
-poetry add python-utility-scripts
-```
-# Scripts:
-## unusedcode
-Helper to identify unused code in a pytest repository. It should be run from inside the test repository using this tool.
+## Installation
 
-### Usage
 ```bash
-poetry run unusedcode
-```
-### Config file
-To skip unused code check on specific files of a repository, a config file with the list of names of such files separated by `\n` should be added to
-`<repo_path>/.config/unusedcode/config`
-
-e.g to skip running unsedcode check on file pytest_matrix_utils.py, following can be added to `<repo_path>/.config/unusedcode/config`
-```bash
-pytest_matrix_utils.py
+pip3 install python-utility-scripts --user
 ```
 
+## Local run
+* Clone the [repository](https://github.com/RedHatQE/python-utility-scripts.git)
 
-## polarion_tc_requirements
-Helper to see polarion test cases of a pytest repository has associated polarion requirements
-
-### Usage
 ```bash
-poetry run polarion_tc_requirements -p <polarion_project_id>
+git clone https://github.com/RedHatQE/python-utility-scripts.git
+```
+
+* Install [poetry](https://github.com/python-poetry/poetry)
+
+```bash
+poetry install
+```
+
+## Config file
+A config yaml file for various utilities of this repository should be added to
+`~/.config/python-utility-scripts/config.yaml`. Script specific config section details can be found in associated script README.md
+
+
+## Release new version
+### requirements:
+* Export GitHub token
+
+```bash
+export GITHUB_TOKEN=<your_github_token>
+```
+
+* [release-it](https://github.com/release-it/release-it)
+
+* Run the following once (execute outside repository dir for example `~/`):
+
+```bash
+sudo npm install --global release-it
+npm install --save-dev @j-ulrich/release-it-regex-bumper
+rm -f package.json package-lock.json
+```
+
+### usage:
+* Create a release, run from the relevant branch.
+To create a new release, run:
+
+```bash
+git checkout main
+git pull
+release-it # Follow the instructions
 ```
