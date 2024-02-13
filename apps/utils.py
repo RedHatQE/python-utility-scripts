@@ -1,9 +1,23 @@
 import os
+
+import yaml
 from simple_logger.logger import get_logger
 import json
 import click
 
 LOGGER = get_logger(name=__name__)
+
+
+def read_config_file(config_file_path):
+    if os.path.exists(config_file_path):
+        with open(config_file_path) as _file:
+            return yaml.safe_load(_file)
+    return {}
+
+
+def get_util_config(util_name, config_file_path):
+    config_yaml = read_config_file(config_file_path=config_file_path)
+    return config_yaml.get(util_name, {})
 
 
 # Reference: https://gist.github.com/welel/9cf860dd3f4d3e09f9b4305878b3a04e
