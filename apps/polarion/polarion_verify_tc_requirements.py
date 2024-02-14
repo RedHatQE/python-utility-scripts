@@ -38,7 +38,7 @@ def has_verify(config_file_path, project_id):
         tests_with_missing_requirements = validate_polarion_requirements(
             polarion_test_ids=added_ids, polarion_project_id=polarion_project_id
         )
-    if tests_with_missing_requirements:
+    if tests_with_missing_requirements := validate_polarion_requirements(...):
         missing_str = "\n".join(tests_with_missing_requirements)
         LOGGER.error(f"TestCases with missing requirement: {missing_str}")
         raise click.Abort()
