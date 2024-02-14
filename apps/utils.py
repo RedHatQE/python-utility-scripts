@@ -76,6 +76,9 @@ class ListParamType(click.ParamType):
 
 
 def all_python_files():
+    """
+    Get all python files from current directory and subdirectories
+    """
     exclude_dirs = [".tox", "venv", ".pytest_cache", "site-packages", ".git"]
     for root, _, files in os.walk(os.path.abspath(os.curdir)):
         if [_dir for _dir in exclude_dirs if _dir in root]:
