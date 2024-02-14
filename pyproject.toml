@@ -18,13 +18,11 @@ repository = "https://github.com/RedHatQE/python-utility-scripts"
 homepage = "https://github.com/RedHatQE/python-utility-scripts"
 documentation = "https://github.com/RedHatQE/python-utility-scripts/blob/main/README.md"
 classifiers = [
-"Programming Language :: Python :: 3",
-"Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
 ]
 
-packages = [
-    { include = "apps" },
-]
+packages = [{ include = "apps" }]
 
 [tool.poetry.scripts]
 pyappsutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
@@ -40,7 +38,8 @@ openshift-python-utilities = "^5.0.23"
 ipdb = "^0.13.13"
 ipython = "*"
 
-
+[tool.poetry-dynamic-versioning]
+enable = true
 
 [tool.poetry.group.test.dependencies]
 pytest = "^8.0.0"
