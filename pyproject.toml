@@ -39,7 +39,6 @@ openshift-python-utilities = "^5.0.23"
 ipdb = "^0.13.13"
 ipython = "*"
 
-
 [tool.poetry-dynamic-versioning]
 enable = true
 pattern = "((?P<epoch>\\d+)!)?(?P<base>\\d+(\\.\\d+)*)"
