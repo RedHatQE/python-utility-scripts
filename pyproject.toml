@@ -9,7 +9,7 @@ exclude = [".git", ".venv", ".mypy_cache", ".tox", "__pycache__"]
 
 [tool.poetry]
 name = "python-utility-scripts"
-version = "0.0.1"
+version = "0.0.0"
 description = "Python utility scripts"
 authors = ["dbasunag <dbasunag@redhat.com>"]
 license = "Apache License 2.0"
@@ -26,7 +26,7 @@ packages = [{ include = "apps" }]
 
 [tool.poetry.scripts]
 pyappsutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
-pyappsutils-polarion_tc_requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
+pyappsutils-polarion-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
 
 
 [tool.poetry.dependencies]
@@ -38,6 +38,7 @@ openshift-python-utilities = "^5.0.23"
 [tool.poetry.group.dev.dependencies]
 ipdb = "^0.13.13"
 ipython = "*"
+
 
 [tool.poetry-dynamic-versioning]
 enable = true

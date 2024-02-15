@@ -1,4 +1,4 @@
-import logging
+from simple_logger.logger import get_logger
 import re
 import shlex
 import subprocess
@@ -6,11 +6,8 @@ import subprocess
 from pylero.exceptions import PyleroLibException
 from pylero.work_item import Requirement, TestCase
 
-logging.basicConfig(level=logging.INFO)
 
-LOGGER = logging.getLogger(__name__)
-APPROVED = "approved"
-AUTOMATED = "automated"
+LOGGER = get_logger(name=__name__)
 
 
 def git_diff():
@@ -30,7 +27,7 @@ def find_polarion_ids(polarion_project_id, data):
     return match_ids
 
 
-def git_diff_added_removed_lines():
+def git_diff_lines():
     diff = {}
     for line in git_diff().splitlines():
         LOGGER.info(line)
@@ -39,14 +36,12 @@ def git_diff_added_removed_lines():
 
         if line.startswith("-"):
             diff.setdefault("removed", []).append(line)
-
     return diff
 
 
 def get_polarion_ids_from_diff(diff, polarion_project_id):
     added_ids = find_polarion_ids(data=diff.get("added", []), polarion_project_id=polarion_project_id)
-    removed_ids = find_polarion_ids(data=diff.get("removed", []), polarion_project_id=polarion_project_id)
-    return added_ids, removed_ids
+    return added_ids
 
 
 def validate_polarion_requirements(polarion_test_ids, polarion_project_id):

@@ -1,18 +1,15 @@
-import logging
+from simple_logger.logger import get_logger
 import os
-
 import click
 
 from apps.polarion.polarion_utils import (
     get_polarion_ids_from_diff,
-    git_diff_added_removed_lines,
+    git_diff_lines,
     validate_polarion_requirements,
 )
-
 from apps.utils import get_util_config
 
-logging.basicConfig(level=logging.INFO)
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_logger(name=__name__)
 
 
 @click.command()
@@ -31,16 +28,14 @@ def has_verify(config_file_path, project_id):
     if not polarion_project_id:
         click.echo("Polarion project id must be passed via config file or command line")
         raise click.Abort()
-    git_diff = git_diff_added_removed_lines()
-    added_ids, _ = get_polarion_ids_from_diff(diff=git_diff, polarion_project_id=polarion_project_id)
+    added_ids = get_polarion_ids_from_diff(diff=git_diff_lines(), polarion_project_id=polarion_project_id)
     LOGGER.info(f"Checking following ids: {added_ids}")
     if added_ids:
         tests_with_missing_requirements = validate_polarion_requirements(
             polarion_test_ids=added_ids, polarion_project_id=polarion_project_id
         )
-    if tests_with_missing_requirements := validate_polarion_requirements(...):
-        missing_str = "\n".join(tests_with_missing_requirements)
-        LOGGER.error(f"TestCases with missing requirement: {missing_str}")
+    if tests_with_missing_requirements:
+        click.echo(f"TestCases with missing requirement: {tests_with_missing_requirements}")
         raise click.Abort()
 
 
