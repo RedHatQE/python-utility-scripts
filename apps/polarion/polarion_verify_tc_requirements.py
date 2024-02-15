@@ -23,7 +23,7 @@ LOGGER = get_logger(name=__name__)
 def has_verify(config_file_path, project_id):
     tests_with_missing_requirements = []
     polarion_project_id = project_id or get_util_config(
-        util_name="pyappsutils-polarion_tc_requirements", config_file_path=config_file_path
+        util_name="pyappsutils-polarion-tc-requirements", config_file_path=config_file_path
     ).get("project_id")
     if not polarion_project_id:
         click.echo("Polarion project id must be passed via config file or command line")
