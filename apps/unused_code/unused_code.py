@@ -52,7 +52,7 @@ def is_ignore_function_list(ignore_prefix_list, function):
         function.name for ignore_prefix in ignore_prefix_list if function.name.startswith(ignore_prefix)
     ]
     if ignore_function_lists:
-        LOGGER.warning(f"Following functions are getting skipped {ignore_prefix_list}: {ignore_function_lists}")
+        LOGGER.info(f"Following functions are getting skipped: {ignore_function_lists}")
         return True
 
 
@@ -79,9 +79,7 @@ def get_unused_functions(config_file_path, exclude_files, exclude_function_prefi
     file_ignore_list = exclude_files or unused_code_config.get("exclude_files", [])
     for py_file in all_python_files():
         if os.path.basename(py_file) in file_ignore_list:
-            LOGGER.warning(f"File {py_file} is being skipped.")
             continue
-        LOGGER.info(f"Checking file: {py_file}")
         with open(py_file) as fd:
             tree = ast.parse(source=fd.read())
 
