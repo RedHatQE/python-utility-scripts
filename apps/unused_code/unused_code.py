@@ -65,7 +65,7 @@ def is_ignore_function_list(ignore_prefix_list, function):
 )
 def get_unused_functions(config_file_path, exclude_files, exclude_function_prefixes):
     _unused_functions = []
-    unused_code_config = get_util_config(util_name="pyappsutils-unusedcode", config_file_path=config_file_path)
+    unused_code_config = get_util_config(util_name="pyutils-unusedcode", config_file_path=config_file_path)
     func_ignore_prefix = exclude_function_prefixes or unused_code_config.get("exclude_function_prefix", [])
     file_ignore_list = exclude_files or unused_code_config.get("exclude_files", [])
     for py_file in all_python_files():

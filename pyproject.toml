@@ -25,8 +25,8 @@ classifiers = [
 packages = [{ include = "apps" }]
 
 [tool.poetry.scripts]
-pyappsutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
-pyappsutils-polarion-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
+pyutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
+pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
 
 
 [tool.poetry.dependencies]
@@ -46,8 +46,10 @@ pattern = "((?P<epoch>\\d+)!)?(?P<base>\\d+(\\.\\d+)*)"
 
 
 
+
 [tool.poetry.group.test.dependencies]
 pytest = "^8.0.0"
+pytest-cov = "^4.1.0"
 
 [tool.poetry-dynamic-versioning.substitution]
 files = ["VERSION"]

@@ -33,14 +33,7 @@ def git_diff_lines():
         if line.startswith("+"):
             diff.setdefault("added", []).append(line)
 
-        if line.startswith("-"):
-            diff.setdefault("removed", []).append(line)
     return diff
-
-
-def get_polarion_ids_from_diff(diff, polarion_project_id):
-    added_ids = find_polarion_ids(data=diff.get("added", []), polarion_project_id=polarion_project_id)
-    return added_ids
 
 
 def validate_polarion_requirements(polarion_test_ids, polarion_project_id):

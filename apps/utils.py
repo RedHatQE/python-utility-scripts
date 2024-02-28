@@ -8,15 +8,11 @@ import click
 LOGGER = get_logger(name=__name__)
 
 
-def read_config_file(config_file_path):
+def get_util_config(util_name, config_file_path):
+    config_yaml = {}
     if os.path.exists(config_file_path):
         with open(config_file_path) as _file:
-            return yaml.safe_load(_file)
-    return {}
-
-
-def get_util_config(util_name, config_file_path):
-    config_yaml = read_config_file(config_file_path=config_file_path)
+            config_yaml = yaml.safe_load(_file)
     return config_yaml.get(util_name, {})
 
 

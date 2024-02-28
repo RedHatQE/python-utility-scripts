@@ -3,9 +3,9 @@ import os
 import click
 
 from apps.polarion.polarion_utils import (
-    get_polarion_ids_from_diff,
     git_diff_lines,
     validate_polarion_requirements,
+    find_polarion_ids,
 )
 from apps.utils import get_util_config
 
@@ -23,14 +23,14 @@ LOGGER = get_logger(name=__name__)
 def has_verify(config_file_path, project_id):
     tests_with_missing_requirements = []
     polarion_project_id = project_id or get_util_config(
-        util_name="pyappsutils-polarion-tc-requirements", config_file_path=config_file_path
+        util_name="pyutils-polarion-tc-requirements", config_file_path=config_file_path
     ).get("project_id")
     if not polarion_project_id:
         click.echo("Polarion project id must be passed via config file or command line")
         raise click.Abort()
-    added_ids = get_polarion_ids_from_diff(diff=git_diff_lines(), polarion_project_id=polarion_project_id)
-    LOGGER.info(f"Checking following ids: {added_ids}")
-    if added_ids:
+
+    if added_ids := find_polarion_ids(data=git_diff_lines().get("added", []), polarion_project_id=polarion_project_id):
+        LOGGER.info(f"Checking following ids: {added_ids}")
         tests_with_missing_requirements = validate_polarion_requirements(
             polarion_test_ids=added_ids, polarion_project_id=polarion_project_id
         )

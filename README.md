@@ -1,7 +1,7 @@
 # python-utility-scripts
 Repository for various python utility scripts
-* [pyappsutils-unusedcode](https://github.com/RedHatQE/python-utility-scripts/blob/main/apps/unused_code/README.md)
-* [pyappsutils-polarion-tc-requirements](https://github.com/RedHatQE/python-utility-scripts/blob/main/apps/polarion/README.md)
+* [pyutils-unusedcode](https://github.com/RedHatQE/python-utility-scripts/blob/main/apps/unused_code/README.md)
+* [pyutils-polarion-tc-requirements](https://github.com/RedHatQE/python-utility-scripts/blob/main/apps/polarion/README.md)
 
 ## Installation
 
