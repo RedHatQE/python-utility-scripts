@@ -19,8 +19,7 @@ def git_diff():
 def find_polarion_ids(polarion_project_id, data):
     match_ids = set()
     for item in data:
-        match = re.findall(rf"pytest.mark.polarion.*{polarion_project_id}-[0-9]+", item)
-        if match:
+        if match := re.findall(rf"pytest.mark.polarion.*{polarion_project_id}-[0-9]+", item):
             match_id = re.findall(rf"{polarion_project_id}-[0-9]+", match[0])
             match_ids.add(match_id[0])
 
