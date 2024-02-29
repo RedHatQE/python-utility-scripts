@@ -13,7 +13,7 @@ def get_util_config(util_name, config_file_path):
     if os.path.exists(config_file_path):
         with open(config_file_path) as _file:
             return yaml.safe_load(_file).get(util_name, {})
-    return config_yaml.get(util_name, {})
+    return {}
 
 
 # Reference: https://gist.github.com/welel/9cf860dd3f4d3e09f9b4305878b3a04e
