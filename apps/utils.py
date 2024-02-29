@@ -9,7 +9,6 @@ LOGGER = get_logger(name=__name__)
 
 
 def get_util_config(util_name, config_file_path):
-    config_yaml = {}
     if os.path.exists(config_file_path):
         with open(config_file_path) as _file:
             return yaml.safe_load(_file).get(util_name, {})

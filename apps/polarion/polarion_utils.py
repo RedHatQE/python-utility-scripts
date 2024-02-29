@@ -17,19 +17,18 @@ def git_diff():
 
 
 def find_polarion_ids(polarion_project_id, data):
-    match_ids = set()
-    for item in data:
-        if match := re.findall(rf"pytest.mark.polarion.*{polarion_project_id}-[0-9]+", item):
-            match_id = re.findall(rf"{polarion_project_id}-[0-9]+", match[0])
-            match_ids.add(match_id[0])
-
-    return match_ids
+    matches = re.findall(
+        rf"pytest.mark.polarion.*{polarion_project_id}-[0-9]+",
+        "\n".join(data),
+        re.MULTILINE | re.IGNORECASE,
+    )
+    return list(set(re.findall(rf"{polarion_project_id}-[0-9]+", "\n".join(matches)))) if matches else []
 
 
 def git_diff_lines():
     diff = {}
     for line in git_diff().splitlines():
-        LOGGER.info(line)
+        LOGGER.debug(line)
         if line.startswith("+"):
             diff.setdefault("added", []).append(line)
 
