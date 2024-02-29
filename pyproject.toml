@@ -1,6 +1,5 @@
 [tool.coverage.run]
-omit = ["tests/*", "apps/"]
-command_line = "pytest --cov ."
+omit = ["tests/*"]
 
 [tool.coverage.report]
 fail_under = 60
