@@ -30,7 +30,7 @@ def has_verify(config_file_path, project_id):
         raise click.Abort()
 
     if added_ids := find_polarion_ids(data=git_diff_lines().get("added", []), polarion_project_id=polarion_project_id):
-        LOGGER.info(f"Checking following ids: {added_ids}")
+        LOGGER.debug(f"Checking following ids: {added_ids}")
         tests_with_missing_requirements = validate_polarion_requirements(
             polarion_test_ids=added_ids, polarion_project_id=polarion_project_id
         )

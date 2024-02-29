@@ -17,12 +17,9 @@ def git_diff():
 
 
 def find_polarion_ids(polarion_project_id, data):
-    matches = re.findall(
-        rf"pytest.mark.polarion.*{polarion_project_id}-[0-9]+",
-        "\n".join(data),
-        re.MULTILINE | re.IGNORECASE,
+    return re.findall(
+        rf"pytest.mark.polarion.*({polarion_project_id}-[0-9]+)", "\n".join(data), re.MULTILINE | re.IGNORECASE
     )
-    return list(set(re.findall(rf"{polarion_project_id}-[0-9]+", "\n".join(matches)))) if matches else []
 
 
 def git_diff_lines():
@@ -39,7 +36,7 @@ def validate_polarion_requirements(polarion_test_ids, polarion_project_id):
     tests_with_missing_requirements = []
     for _id in polarion_test_ids:
         has_req = False
-        LOGGER.info(f"Checking if {_id} verifies any requirement")
+        LOGGER.debug(f"Checking if {_id} verifies any requirement")
         tc = TestCase(project_id=polarion_project_id, work_item_id=_id)
         for link in tc.linked_work_items:
             try:
