@@ -12,7 +12,7 @@ def get_util_config(util_name, config_file_path):
     config_yaml = {}
     if os.path.exists(config_file_path):
         with open(config_file_path) as _file:
-            config_yaml = yaml.safe_load(_file)
+            return yaml.safe_load(_file).get(util_name, {})
     return config_yaml.get(util_name, {})
 
 
