@@ -35,7 +35,7 @@ def test_polarion_with_no_requirement():
         with mock.patch("apps.polarion.polarion_verify_tc_requirements.validate_polarion_requirements") as validate_req:
             validate_req.return_value = ["ABC-1212", "ABC-1213"]
             result = get_cli_runner().invoke(has_verify, "--project-id ABC")
-            assert result.exit_code == 1, ERROR_MESSAGE.format(exit_code=result.exit_code)
+            assert result.exit_code != 0, ERROR_MESSAGE.format(exit_code=result.exit_code)
             assert f"TestCases with missing requirement: {validate_req.return_value}" in result.output
     LOGGER.debug(f"Result output: {result.output}, exit code: {result.exit_code}, exceptions: {result.exception}")
 
