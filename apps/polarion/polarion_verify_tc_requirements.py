@@ -21,7 +21,7 @@ LOGGER = get_logger(name=__name__)
     default=os.path.expanduser("~/.config/python-utility-scripts/config.yaml"),
 )
 @click.option("--project-id", "-p", help="Provide the polarion project id")
-@click.option('--verbosity', default=False, is_flag=True)
+@click.option("--verbosity", default=False, is_flag=True)
 def has_verify(config_file_path, project_id, verbosity):
     if verbosity:
         LOGGER.setLevel(logging.DEBUG)
@@ -33,7 +33,9 @@ def has_verify(config_file_path, project_id, verbosity):
         raise click.Abort()
 
     if added_ids := re.findall(
-        rf"pytest.mark.polarion.*({polarion_project_id}-[0-9]+)", "\n".join(git_diff_lines().get("added", [])), re.MULTILINE | re.IGNORECASE
+        rf"pytest.mark.polarion.*({polarion_project_id}-[0-9]+)",
+        "\n".join(git_diff_lines().get("added", [])),
+        re.MULTILINE | re.IGNORECASE,
     ):
         LOGGER.debug(f"Checking following ids: {added_ids}")
         if tests_with_missing_requirements := validate_polarion_requirements(
