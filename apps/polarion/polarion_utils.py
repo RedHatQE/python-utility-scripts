@@ -1,5 +1,4 @@
 from simple_logger.logger import get_logger
-import re
 import shlex
 import subprocess
 
@@ -14,12 +13,6 @@ def git_diff():
     data = subprocess.check_output(shlex.split("git diff HEAD^-1"))
     data = data.decode("utf-8")
     return data
-
-
-def find_polarion_ids(polarion_project_id, data):
-    return re.findall(
-        rf"pytest.mark.polarion.*({polarion_project_id}-[0-9]+)", "\n".join(data), re.MULTILINE | re.IGNORECASE
-    )
 
 
 def git_diff_lines():

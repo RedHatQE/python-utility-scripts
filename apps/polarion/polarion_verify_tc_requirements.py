@@ -1,3 +1,5 @@
+import re
+import logging
 from simple_logger.logger import get_logger
 import os
 import click
@@ -5,7 +7,6 @@ import click
 from apps.polarion.polarion_utils import (
     git_diff_lines,
     validate_polarion_requirements,
-    find_polarion_ids,
 )
 from apps.utils import get_util_config
 
@@ -20,7 +21,10 @@ LOGGER = get_logger(name=__name__)
     default=os.path.expanduser("~/.config/python-utility-scripts/config.yaml"),
 )
 @click.option("--project-id", "-p", help="Provide the polarion project id")
-def has_verify(config_file_path, project_id):
+@click.option('--verbosity', default=False, is_flag=True)
+def has_verify(config_file_path, project_id, verbosity):
+    if verbosity:
+        LOGGER.setLevel(logging.DEBUG)
     polarion_project_id = project_id or get_util_config(
         util_name="pyutils-polarion-verify-tc-requirements", config_file_path=config_file_path
     ).get("project_id")
@@ -28,7 +32,9 @@ def has_verify(config_file_path, project_id):
         click.echo("Polarion project id must be passed via config file or command line")
         raise click.Abort()
 
-    if added_ids := find_polarion_ids(data=git_diff_lines().get("added", []), polarion_project_id=polarion_project_id):
+    if added_ids := re.findall(
+        rf"pytest.mark.polarion.*({polarion_project_id}-[0-9]+)", "\n".join(git_diff_lines().get("added", [])), re.MULTILINE | re.IGNORECASE
+    ):
         LOGGER.debug(f"Checking following ids: {added_ids}")
         if tests_with_missing_requirements := validate_polarion_requirements(
             polarion_test_ids=added_ids, polarion_project_id=polarion_project_id
