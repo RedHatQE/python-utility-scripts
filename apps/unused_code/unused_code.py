@@ -15,10 +15,12 @@ def is_fixture_autouse(func):
         for deco in func.decorator_list:
             if not hasattr(deco, "func"):
                 continue
-            if deco.func.attr == "fixture" and deco.func.value.id == "pytest":
-                for _key in deco.keywords:
-                    if _key.arg == "autouse":
-                        return _key.value.s
+
+            if getattr(deco.func, "attr", None) and getattr(deco.func, "value", None):
+                if deco.func.attr == "fixture" and deco.func.value.id == "pytest":
+                    for _key in deco.keywords:
+                        if _key.arg == "autouse":
+                            return _key.value.s
 
 
 def _iter_functions(tree):
@@ -64,7 +66,9 @@ def is_ignore_function_list(ignore_prefix_list, function):
     default=os.path.expanduser("~/.config/python-utility-scripts/config.yaml"),
 )
 @click.option(
-    "--exclude-files", help="Provide a comma-separated string or list of files to exclude", type=ListParamType()
+    "--exclude-files",
+    help="Provide a comma-separated string or list of files to exclude",
+    type=ListParamType(),
 )
 @click.option(
     "--exclude-function-prefixes",
