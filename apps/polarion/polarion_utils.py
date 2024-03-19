@@ -1,9 +1,7 @@
 from simple_logger.logger import get_logger
 import shlex
 import subprocess
-
 from pylero.exceptions import PyleroLibException
-from pylero.work_item import Requirement, TestCase
 
 
 LOGGER = get_logger(name=__name__)
@@ -27,6 +25,8 @@ def git_diff_lines():
 
 def validate_polarion_requirements(polarion_test_ids, polarion_project_id):
     tests_with_missing_requirements = []
+    from pylero.work_item import Requirement, TestCase
+
     for _id in polarion_test_ids:
         has_req = False
         LOGGER.debug(f"Checking if {_id} verifies any requirement")

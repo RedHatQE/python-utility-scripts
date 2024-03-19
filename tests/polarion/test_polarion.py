@@ -28,10 +28,7 @@ def test_polarion_requirement_config():
 
 
 def test_polarion_with_no_requirement():
-    with mock.patch("apps.polarion.polarion_verify_tc_requirements.git_diff_lines") as get_diff_lines:
-        get_diff_lines.return_value = {
-            "added": ['+ @pytest.mark.polarion("ABC-1212")', '+ @pytest.mark.polarion("ABC-1213")']
-        }
+    with mock.patch("apps.polarion.polarion_verify_tc_requirements.re.findall", return_value=["ABC-1212", "ABC-1213"]):
         with mock.patch("apps.polarion.polarion_verify_tc_requirements.validate_polarion_requirements") as validate_req:
             validate_req.return_value = ["ABC-1212", "ABC-1213"]
             result = get_cli_runner().invoke(has_verify, "--project-id ABC")

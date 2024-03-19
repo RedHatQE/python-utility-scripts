@@ -1,10 +1,12 @@
 # scripts to interact with Polarion instance
 
 ## pyutils-polarion-verify-tc-requirements
-Helper to check if test cases in a pytest repository has associated Polarion requirements.
+Utility to check if test cases in a pytest repository has associated Polarion requirements.
+
+## Requirements
+This script uses [pylero](https://github.com/RedHatQE/pylero) and expects .pylero config file to be present in current directory or user's home directory.
 
 ## Usage
-This script uses [pylero](https://github.com/RedHatQE/pylero) and expects .pylero config file to be present in current directory or user's home directory.
 ```bash
 pyutils-polarion-verify-tc-requirements --help
 pyutils-polarion-verify-tc-requirements --project_id <project_id>
