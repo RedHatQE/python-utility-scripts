@@ -1,0 +1,7 @@
+pyutils-unusedcode:
+  exclude_files:
+  - "my_exclude_file.py"
+  exclude_function_prefix:
+  - "my_exclude_function_prefix"
+pyutils-polarion-verify-tc-requirements:
+  project_id: "ABC"
