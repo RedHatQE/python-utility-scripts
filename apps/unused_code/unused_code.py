@@ -1,4 +1,5 @@
 import ast
+import logging
 import os
 import subprocess
 import click
@@ -67,7 +68,10 @@ def is_ignore_function_list(ignore_prefix_list, function):
     help="Provide a comma-separated string or list of function prefixes to exclude",
     type=ListParamType(),
 )
-def get_unused_functions(config_file_path, exclude_files, exclude_function_prefixes):
+@click.option("--verbosity", default=False, is_flag=True)
+def get_unused_functions(config_file_path, exclude_files, exclude_function_prefixes, verbosity):
+    if verbosity:
+        LOGGER.setLevel(logging.DEBUG)
     _unused_functions = []
     unused_code_config = get_util_config(util_name="pyutils-unusedcode", config_file_path=config_file_path)
     func_ignore_prefix = exclude_function_prefixes or unused_code_config.get("exclude_function_prefix", [])
