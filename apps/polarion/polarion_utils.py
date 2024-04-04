@@ -23,9 +23,13 @@ def git_diff_lines():
     return diff
 
 
-def validate_polarion_requirements(polarion_test_ids, polarion_project_id):
+def validate_polarion_requirements(
+    polarion_test_ids,
+    polarion_project_id,
+):
+    from pylero.work_item import TestCase, Requirement
+
     tests_with_missing_requirements = []
-    from pylero.work_item import Requirement, TestCase
 
     for _id in polarion_test_ids:
         has_req = False
