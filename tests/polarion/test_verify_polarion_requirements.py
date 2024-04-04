@@ -19,12 +19,12 @@ def test_missing_project_id():
 
 def test_project_id_from_config():
     command = f"{BASE_COMMAND} --config-file-path=config.example.yaml"
-    rc, out, _ = run_command(
+    rc, _, err = run_command(
         command=shlex.split(command),
         verify_stderr=False,
         check=False,
         capture_output=False,
         stderr=subprocess.PIPE,
     )
-    assert not out
+    assert not err
     assert rc
