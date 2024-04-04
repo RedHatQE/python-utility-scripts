@@ -1,11 +1,11 @@
 import ast
+import logging
 import os
 import subprocess
 import click
-import yaml
 from simple_logger.logger import get_logger
 
-from apps.utils import all_python_files, ListParamType
+from apps.utils import all_python_files, ListParamType, get_util_config
 
 LOGGER = get_logger(name=__name__)
 
@@ -42,19 +42,12 @@ def _iter_functions(tree):
             yield elm
 
 
-def read_config_file(config_file_path):
-    if os.path.exists(config_file_path):
-        with open(config_file_path) as _file:
-            return yaml.safe_load(_file)
-    return {}
-
-
 def is_ignore_function_list(ignore_prefix_list, function):
     ignore_function_lists = [
         function.name for ignore_prefix in ignore_prefix_list if function.name.startswith(ignore_prefix)
     ]
     if ignore_function_lists:
-        LOGGER.info(f"Following functions are getting skipped: {ignore_function_lists}")
+        LOGGER.debug(f"Following functions are getting skipped: {ignore_function_lists}")
         return True
 
 
@@ -75,10 +68,12 @@ def is_ignore_function_list(ignore_prefix_list, function):
     help="Provide a comma-separated string or list of function prefixes to exclude",
     type=ListParamType(),
 )
-def get_unused_functions(config_file_path, exclude_files, exclude_function_prefixes):
+@click.option("--verbosity", default=False, is_flag=True)
+def get_unused_functions(config_file_path, exclude_files, exclude_function_prefixes, verbosity):
+    if verbosity:
+        LOGGER.setLevel(logging.DEBUG)
     _unused_functions = []
-    config_yaml = read_config_file(config_file_path=config_file_path)
-    unused_code_config = config_yaml.get("pyappsutils-unusedcode", {})
+    unused_code_config = get_util_config(util_name="pyutils-unusedcode", config_file_path=config_file_path)
     func_ignore_prefix = exclude_function_prefixes or unused_code_config.get("exclude_function_prefix", [])
     file_ignore_list = exclude_files or unused_code_config.get("exclude_files", [])
     for py_file in all_python_files():

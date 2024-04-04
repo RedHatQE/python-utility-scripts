@@ -1,12 +1,8 @@
 from simple_logger.logger import get_logger
-from click.testing import CliRunner
 from apps.unused_code.unused_code import get_unused_functions
+from tests.utils import get_cli_runner
 
 LOGGER = get_logger(name=__name__)
-
-
-def get_cli_runner():
-    return CliRunner()
 
 
 def test_unused_code():

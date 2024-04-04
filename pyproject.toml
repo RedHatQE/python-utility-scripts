@@ -1,3 +1,14 @@
+[tool.coverage.run]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+fail_under = 60
+skip_empty = true
+
+[tool.coverage.html]
+directory = ".tests_coverage"
+show_contexts = true
+
 [tool.ruff]
 preview = true
 line-length = 120
@@ -25,7 +36,8 @@ classifiers = [
 packages = [{ include = "apps" }]
 
 [tool.poetry.scripts]
-pyappsutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
+pyutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
+pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
 
 
 [tool.poetry.dependencies]
@@ -33,10 +45,13 @@ python = "^3.8"
 python-simple-logger = "^1.0.8"
 pylero = "^0.0.8"
 pyyaml = "*"
+pyhelper-utils = "^0.0.3"
+pytest-mock = "^3.14.0"
 
 [tool.poetry.group.dev.dependencies]
 ipdb = "^0.13.13"
 ipython = "*"
+
 
 [tool.poetry-dynamic-versioning]
 enable = true
@@ -44,8 +59,12 @@ pattern = "((?P<epoch>\\d+)!)?(?P<base>\\d+(\\.\\d+)*)"
 
 
 
+
+
+
 [tool.poetry.group.test.dependencies]
 pytest = "^8.0.0"
+pytest-cov = "^4.1.0"
 
 [tool.poetry-dynamic-versioning.substitution]
 files = ["VERSION"]
