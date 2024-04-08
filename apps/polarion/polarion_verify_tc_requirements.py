@@ -3,14 +3,13 @@ import logging
 from simple_logger.logger import get_logger
 import os
 import click
-
 from apps.polarion.polarion_utils import (
     git_diff_lines,
     validate_polarion_requirements,
 )
 from apps.utils import get_util_config
 
-LOGGER = get_logger(name=__name__)
+LOGGER = get_logger(name="polarion-verify-tc-requirements")
 
 
 @click.command()
@@ -25,11 +24,14 @@ LOGGER = get_logger(name=__name__)
 def has_verify(config_file_path, project_id, verbosity):
     if verbosity:
         LOGGER.setLevel(logging.DEBUG)
+
     polarion_project_id = project_id or get_util_config(
-        util_name="pyutils-polarion-verify-tc-requirements", config_file_path=config_file_path
+        util_name="pyutils-polarion-verify-tc-requirements",
+        config_file_path=config_file_path,
     ).get("project_id")
+
     if not polarion_project_id:
-        click.echo("Polarion project id must be passed via config file or command line")
+        LOGGER.error("Polarion project id must be passed via config file or command line")
         raise click.Abort()
 
     if added_ids := re.findall(
@@ -39,7 +41,8 @@ def has_verify(config_file_path, project_id, verbosity):
     ):
         LOGGER.debug(f"Checking following ids: {added_ids}")
         if tests_with_missing_requirements := validate_polarion_requirements(
-            polarion_test_ids=added_ids, polarion_project_id=polarion_project_id
+            polarion_test_ids=added_ids,
+            polarion_project_id=polarion_project_id,
         ):
             click.echo(f"TestCases with missing requirement: {tests_with_missing_requirements}")
             raise click.Abort()
