@@ -2,10 +2,10 @@ import shlex
 import subprocess
 from pyhelper_utils.shell import run_command
 
-BASE_COMMAND = "poetry run python3 apps/polarion/polarion_verify_tc_requirements.py"
+BASE_COMMAND = "poetry run python apps/polarion/polarion_set_automated.py"
 
 
-def test_missing_project_id():
+def test_missing_project_id_set_automated():
     rc, _, err = run_command(
         command=shlex.split(BASE_COMMAND),
         verify_stderr=False,
@@ -17,7 +17,7 @@ def test_missing_project_id():
     assert not rc
 
 
-def test_project_id_from_config():
+def test_project_id_from_config_set_automated():
     command = f"{BASE_COMMAND} --config-file-path=config.example.yaml"
     rc, _, err = run_command(
         command=shlex.split(command),
