@@ -32,7 +32,7 @@ def git_diff_lines():
 
 def validate_polarion_requirements(
     polarion_project_id,
-    polarion_test_ids=None,
+    polarion_test_ids,
 ):
     tests_with_missing_requirements = []
     if polarion_test_ids:
@@ -75,7 +75,7 @@ def get_polarion_project_id(project_id, config_file_path, util_name):
     return polarion_project_id
 
 
-def update_polarion_ids(project_id, is_automated, polarion_ids=None, is_approved=False):
+def update_polarion_ids(project_id, is_automated, polarion_ids, is_approved=False):
     updated_ids = {}
     if polarion_ids:
         automation_status = AUTOMATED if is_automated else NOT_AUTOMATED

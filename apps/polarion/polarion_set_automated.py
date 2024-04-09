@@ -7,9 +7,6 @@ import click
 from apps.polarion.polarion_utils import get_polarion_project_id, find_polarion_ids, update_polarion_ids
 
 LOGGER = get_logger(name=__name__)
-AUTOMATED = "automated"
-NOT_AUTOMATED = "notautomated"
-APPROVED = "approved"
 
 
 @click.command()
@@ -27,7 +24,7 @@ def polarion_approve_automate(config_file_path, project_id, verbosity):
     removed_polarions = {}
     added_polarions = {}
     polarion_project_id = get_polarion_project_id(
-        project_id=project_id, config_file_path=config_file_path, util_name="pyutils-polarion_set_automated"
+        project_id=project_id, config_file_path=config_file_path, util_name="pyutils-polarion-set-automated"
     )
     added_ids = find_polarion_ids(polarion_project_id=polarion_project_id, string_to_match="added")
     LOGGER.debug(f"Following polarion ids were added: {added_ids}")
