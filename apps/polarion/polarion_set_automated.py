@@ -19,8 +19,8 @@ LOGGER = get_logger(name=__name__)
 @click.option("--project-id", "-p", help="Provide the polarion project id")
 @click.option("--verbosity", default=False, is_flag=True)
 def polarion_approve_automate(config_file_path, project_id, verbosity):
-    if verbosity:
-        LOGGER.setLevel(logging.DEBUG)
+    if not verbose:
+        logging.disable(logging.CRITICAL)
     removed_polarions = {}
     added_polarions = {}
     polarion_project_id = get_polarion_project_id(
