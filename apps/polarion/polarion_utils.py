@@ -65,7 +65,7 @@ def find_polarion_ids(polarion_project_id, string_to_match):
     )
 
 
-def get_polarion_project_id(project_id, config_file_path, util_name):
+def get_polarion_project_id(util_name=None, project_id=None, config_file_path=None):
     polarion_project_id = project_id or get_util_config(util_name=util_name, config_file_path=config_file_path).get(
         "project_id"
     )
@@ -93,6 +93,7 @@ def update_polarion_ids(project_id, is_automated, polarion_ids, is_approved=Fals
                 LOGGER.debug(f"Polarion {id}: marked as: {automation_status}, approved status set: {is_approved}")
                 updated_ids.setdefault("updated", []).append(id)
             except PyleroLibException as polarion_exception:
-                LOGGER.warning(f"{id}: {polarion_exception}")
-                updated_ids.setdefault("failed", []).append(id)
+                error = f"{id}: {polarion_exception}"
+                LOGGER.warning(error)
+                updated_ids.setdefault("failed", []).append(error)
     return updated_ids
