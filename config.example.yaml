@@ -4,4 +4,6 @@ pyutils-unusedcode:
   exclude_function_prefix:
   - "my_exclude_function_prefix"
 pyutils-polarion-verify-tc-requirements:
-  project_id: "ABC"
+  project_id: "ABCDEF"
+pyutils-polarion-set-automated:
+  project_id: "ABCDEF"
