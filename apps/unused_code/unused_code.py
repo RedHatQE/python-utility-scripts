@@ -6,11 +6,12 @@ import click
 from simple_logger.logger import get_logger
 
 from apps.utils import all_python_files, ListParamType, get_util_config
+from typing import Any
 
 LOGGER = get_logger(name=__name__)
 
 
-def is_fixture_autouse(func):
+def is_fixture_autouse(func: Any) -> Any:
     if func.decorator_list:
         for deco in func.decorator_list:
             if not hasattr(deco, "func"):
@@ -23,15 +24,15 @@ def is_fixture_autouse(func):
                             return _key.value.s
 
 
-def _iter_functions(tree):
+def _iter_functions(tree: Any) -> Any:
     """
     Get all function from python file
     """
 
-    def is_func(_elm):
+    def is_func(_elm: Any) -> Any:
         return isinstance(_elm, ast.FunctionDef)
 
-    def is_test(_elm):
+    def is_test(_elm: Any) -> Any:
         return _elm.name.startswith("test_")
 
     for elm in tree.body:
@@ -42,7 +43,7 @@ def _iter_functions(tree):
             yield elm
 
 
-def is_ignore_function_list(ignore_prefix_list, function):
+def is_ignore_function_list(ignore_prefix_list: list, function: Any) -> Any:
     ignore_function_lists = [
         function.name for ignore_prefix in ignore_prefix_list if function.name.startswith(ignore_prefix)
     ]
@@ -68,10 +69,14 @@ def is_ignore_function_list(ignore_prefix_list, function):
     help="Provide a comma-separated string or list of function prefixes to exclude",
     type=ListParamType(),
 )
-@click.option("--verbosity", default=False, is_flag=True)
-def get_unused_functions(config_file_path, exclude_files, exclude_function_prefixes, verbosity):
-    if verbosity:
+@click.option("--verbose", default=False, is_flag=True)
+def get_unused_functions(
+    config_file_path: Any, exclude_files: Any, exclude_function_prefixes: Any, verbose: bool
+) -> Any:
+    if verbose:
         LOGGER.setLevel(logging.DEBUG)
+    else:
+        logging.disable(logging.CRITICAL)
     _unused_functions = []
     unused_code_config = get_util_config(util_name="pyutils-unusedcode", config_file_path=config_file_path)
     func_ignore_prefix = exclude_function_prefixes or unused_code_config.get("exclude_function_prefix", [])

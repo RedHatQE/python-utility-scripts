@@ -2,31 +2,29 @@ from simple_logger.logger import get_logger
 import shlex
 import subprocess
 from pylero.exceptions import PyleroLibException
-
+from typing import Any
 
 LOGGER = get_logger(name=__name__)
 
 
-def git_diff():
+def git_diff() -> Any:
     data = subprocess.check_output(shlex.split("git diff HEAD^-1"))
-    data = data.decode("utf-8")
-    return data
+    return data.decode("utf-8")
 
 
-def git_diff_lines():
-    diff = {}
+def git_diff_lines() -> dict:
+    diff: dict = {}
     for line in git_diff().splitlines():
         LOGGER.debug(line)
         if line.startswith("+"):
             diff.setdefault("added", []).append(line)
-
     return diff
 
 
 def validate_polarion_requirements(
-    polarion_test_ids,
-    polarion_project_id,
-):
+    polarion_test_ids: list,
+    polarion_project_id: str,
+) -> list:
     from pylero.work_item import TestCase, Requirement
 
     tests_with_missing_requirements = []
