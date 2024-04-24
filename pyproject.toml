@@ -58,19 +58,6 @@ enable = true
 pattern = "((?P<epoch>\\d+)!)?(?P<base>\\d+(\\.\\d+)*)"
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 [tool.poetry.group.test.dependencies]
 pytest = "^8.0.0"
 pytest-cov = "^4.1.0"
