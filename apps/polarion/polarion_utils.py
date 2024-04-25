@@ -9,7 +9,7 @@ LOGGER = get_logger(name=__name__)
 
 def git_diff() -> str:
     data = subprocess.check_output(shlex.split("git diff HEAD^-1"))
-    return data.decode("utf-8")
+    return data.decode()
 
 
 def git_diff_lines() -> Dict[str, List[str]]:
