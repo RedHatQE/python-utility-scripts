@@ -1,14 +1,16 @@
+from __future__ import annotations
 import os
 
 import yaml
 from simple_logger.logger import get_logger
 import json
 import click
+from typing import Any
 
 LOGGER = get_logger(name=__name__)
 
 
-def get_util_config(util_name, config_file_path):
+def get_util_config(util_name: str, config_file_path: Any) -> dict:
     if os.path.exists(config_file_path):
         with open(config_file_path) as _file:
             return yaml.safe_load(_file).get(util_name, {})
@@ -39,7 +41,7 @@ class ListParamType(click.ParamType):
 
     name = "list"
 
-    def convert(self, cli_value, param, ctx):
+    def convert(self, cli_value: Any, param: click.Parameter | None, ctx: click.Context | None) -> Any:
         """Converts CLI value to the list structure.
 
         Args:
@@ -70,7 +72,7 @@ class ListParamType(click.ParamType):
                 )
 
 
-def all_python_files():
+def all_python_files() -> Any:
     """
     Get all python files from current directory and subdirectories
     """
