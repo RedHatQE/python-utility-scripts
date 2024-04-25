@@ -6,7 +6,6 @@ import shlex
 import subprocess
 
 from apps.utils import get_util_config
-from pylero.exceptions import PyleroLibException
 from typing import Dict, List
 
 LOGGER = get_logger(name=__name__)
@@ -32,7 +31,7 @@ def git_diff_lines() -> Dict[str, List[str]]:
 
 
 def validate_polarion_requirements(
-   polarion_test_ids: List[str],
+    polarion_test_ids: List[str],
     polarion_project_id: str,
 ) -> List[str]:
     tests_with_missing_requirements: List[str] = []
