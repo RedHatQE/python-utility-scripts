@@ -5,12 +5,12 @@ import yaml
 from simple_logger.logger import get_logger
 import json
 import click
-from typing import Any
+from typing import Any, Dict, Iterable
 
 LOGGER = get_logger(name=__name__)
 
 
-def get_util_config(util_name: str, config_file_path: Any) -> dict:
+def get_util_config(util_name: str, config_file_path: str) -> Dict[str, Any]:
     if os.path.exists(config_file_path):
         with open(config_file_path) as _file:
             return yaml.safe_load(_file).get(util_name, {})
@@ -72,7 +72,7 @@ class ListParamType(click.ParamType):
                 )
 
 
-def all_python_files() -> Any:
+def all_python_files() -> Iterable[str]:
     """
     Get all python files from current directory and subdirectories
     """
