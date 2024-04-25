@@ -6,6 +6,8 @@ import shlex
 import subprocess
 
 from apps.utils import get_util_config
+from pylero.exceptions import PyleroLibException
+from typing import Dict, List
 
 LOGGER = get_logger(name=__name__)
 AUTOMATED = "automated"
@@ -13,14 +15,13 @@ NOT_AUTOMATED = "notautomated"
 APPROVED = "approved"
 
 
-def git_diff():
+def git_diff() -> str:
     data = subprocess.check_output(shlex.split("git diff HEAD^-1"))
-    data = data.decode("utf-8")
-    return data
+    return data.decode()
 
 
-def git_diff_lines():
-    diff = {}
+def git_diff_lines() -> Dict[str, List[str]]:
+    diff: Dict[str, List[str]] = {}
     for line in git_diff().splitlines():
         LOGGER.debug(line)
         if line.startswith("+"):
@@ -31,10 +32,10 @@ def git_diff_lines():
 
 
 def validate_polarion_requirements(
-    polarion_project_id,
-    polarion_test_ids,
-):
-    tests_with_missing_requirements = []
+   polarion_test_ids: List[str],
+    polarion_project_id: str,
+) -> List[str]:
+    tests_with_missing_requirements: List[str] = []
     if polarion_test_ids:
         from pylero.work_item import TestCase, Requirement
         from pylero.exceptions import PyleroLibException

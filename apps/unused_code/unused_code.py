@@ -6,49 +6,46 @@ import click
 from simple_logger.logger import get_logger
 
 from apps.utils import all_python_files, ListParamType, get_util_config
+from typing import Any, Iterable, List
 
 LOGGER = get_logger(name=__name__)
 
 
-def is_fixture_autouse(func):
-    if func.decorator_list:
-        for deco in func.decorator_list:
-            if not hasattr(deco, "func"):
-                continue
+def is_fixture_autouse(func: ast.FunctionDef) -> bool:
+    deco_list: List[Any] = func.decorator_list
+    for deco in deco_list or []:
+        if not hasattr(deco, "func"):
+            continue
 
-            if getattr(deco.func, "attr", None) and getattr(deco.func, "value", None):
-                if deco.func.attr == "fixture" and deco.func.value.id == "pytest":
-                    for _key in deco.keywords:
-                        if _key.arg == "autouse":
-                            return _key.value.s
+        if getattr(deco.func, "attr", None) and getattr(deco.func, "value", None):
+            if deco.func.attr == "fixture" and deco.func.value.id == "pytest":
+                for _key in deco.keywords:
+                    if _key.arg == "autouse":
+                        return True
+    return False
 
 
-def _iter_functions(tree):
+def _iter_functions(tree: ast.Module) -> Iterable[ast.FunctionDef]:
     """
     Get all function from python file
     """
-
-    def is_func(_elm):
-        return isinstance(_elm, ast.FunctionDef)
-
-    def is_test(_elm):
-        return _elm.name.startswith("test_")
-
     for elm in tree.body:
-        if is_func(_elm=elm):
-            if is_test(_elm=elm):
+        if isinstance(elm, ast.FunctionDef):
+            if elm.name.startswith("test_"):
                 continue
 
             yield elm
 
 
-def is_ignore_function_list(ignore_prefix_list, function):
+def is_ignore_function_list(ignore_prefix_list: List[str], function: ast.FunctionDef) -> bool:
     ignore_function_lists = [
         function.name for ignore_prefix in ignore_prefix_list if function.name.startswith(ignore_prefix)
     ]
     if ignore_function_lists:
         LOGGER.debug(f"Following functions are getting skipped: {ignore_function_lists}")
         return True
+
+    return False
 
 
 @click.command()
@@ -68,14 +65,20 @@ def is_ignore_function_list(ignore_prefix_list, function):
     help="Provide a comma-separated string or list of function prefixes to exclude",
     type=ListParamType(),
 )
-@click.option("--verbosity", default=False, is_flag=True)
-def get_unused_functions(config_file_path, exclude_files, exclude_function_prefixes, verbosity):
-    if verbosity:
+@click.option("--verbose", default=False, is_flag=True)
+def get_unused_functions(
+    config_file_path: Any, exclude_files: Any, exclude_function_prefixes: Any, verbose: bool
+) -> Any:
+    if verbose:
         LOGGER.setLevel(logging.DEBUG)
+    else:
+        logging.disable(logging.CRITICAL)
+
     _unused_functions = []
     unused_code_config = get_util_config(util_name="pyutils-unusedcode", config_file_path=config_file_path)
     func_ignore_prefix = exclude_function_prefixes or unused_code_config.get("exclude_function_prefix", [])
     file_ignore_list = exclude_files or unused_code_config.get("exclude_files", [])
+
     for py_file in all_python_files():
         if os.path.basename(py_file) in file_ignore_list:
             continue

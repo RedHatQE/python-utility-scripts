@@ -16,7 +16,7 @@ LOGGER = get_logger(name="polarion-verify-tc-requirements")
 )
 @click.option("--project-id", "-p", help="Provide the polarion project id")
 @click.option("--verbosity", default=False, is_flag=True)
-def has_verify(config_file_path, project_id, verbosity):
+def has_verify(config_file_path: str, project_id: str, verbosity: bool) -> None:
     if verbosity:
         LOGGER.setLevel(logging.DEBUG)
     polarion_project_id = get_polarion_project_id(
