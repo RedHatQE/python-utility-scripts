@@ -10,6 +10,8 @@ directory = ".tests_coverage"
 show_contexts = true
 
 [tool.mypy]
+show_error_codes = true
+warn_unused_ignores = true
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_incomplete_defs = true
