@@ -15,12 +15,14 @@ LOGGER = get_logger(name="polarion-verify-tc-requirements")
     default=os.path.expanduser("~/.config/python-utility-scripts/config.yaml"),
 )
 @click.option("--project-id", "-p", help="Provide the polarion project id")
-@click.option("--verbosity", default=False, is_flag=True)
-def has_verify(config_file_path: str, project_id: str, verbosity: bool) -> None:
-    if verbosity:
+@click.option("--verbose", default=False, is_flag=True)
+def has_verify(config_file_path: str, project_id: str, verbose: bool) -> None:
+    if verbose:
         LOGGER.setLevel(logging.DEBUG)
-    polarion_project_id = get_polarion_project_id(
-        project_id=project_id, config_file_path=config_file_path, util_name="pyutils-polarion-verify-tc-requirements"
+    else:
+        logging.disable(logging.WARNING)
+    polarion_project_id = project_id or get_polarion_project_id(
+        config_file_path=config_file_path, util_name="pyutils-polarion-verify-tc-requirements"
     )
     if added_ids := find_polarion_ids(polarion_project_id=polarion_project_id, string_to_match="added"):
         LOGGER.debug(f"Checking following ids: {added_ids}")

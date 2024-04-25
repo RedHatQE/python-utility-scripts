@@ -1,3 +1,4 @@
+from __future__ import annotations
 import re
 
 import click
@@ -57,7 +58,7 @@ def validate_polarion_requirements(
     return tests_with_missing_requirements
 
 
-def find_polarion_ids(polarion_project_id, string_to_match):
+def find_polarion_ids(polarion_project_id: str, string_to_match: str) -> List[str]:
     return re.findall(
         rf"pytest.mark.polarion.*({polarion_project_id}-[0-9]+)",
         "\n".join(git_diff_lines().get(string_to_match, [])),
@@ -65,18 +66,18 @@ def find_polarion_ids(polarion_project_id, string_to_match):
     )
 
 
-def get_polarion_project_id(util_name=None, project_id=None, config_file_path=None):
-    polarion_project_id = project_id or get_util_config(util_name=util_name, config_file_path=config_file_path).get(
-        "project_id"
-    )
+def get_polarion_project_id(util_name: str, config_file_path: str) -> str:
+    polarion_project_id = get_util_config(util_name=util_name, config_file_path=config_file_path).get("project_id")
     if not polarion_project_id:
         LOGGER.error("Polarion project id must be passed via config file or command line")
         raise click.Abort()
     return polarion_project_id
 
 
-def update_polarion_ids(project_id, is_automated, polarion_ids, is_approved=False):
-    updated_ids = {}
+def update_polarion_ids(
+    project_id: str, is_automated: bool, polarion_ids: List[str], is_approved: bool = False
+) -> Dict[str, List[str]]:
+    updated_ids: Dict[str, List[str]] = {}
     if polarion_ids:
         automation_status = AUTOMATED if is_automated else NOT_AUTOMATED
 
