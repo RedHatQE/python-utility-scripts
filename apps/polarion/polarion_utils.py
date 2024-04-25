@@ -2,18 +2,18 @@ from simple_logger.logger import get_logger
 import shlex
 import subprocess
 from pylero.exceptions import PyleroLibException
-from typing import Any
+from typing import Dict, List
 
 LOGGER = get_logger(name=__name__)
 
 
-def git_diff() -> Any:
+def git_diff() -> str:
     data = subprocess.check_output(shlex.split("git diff HEAD^-1"))
-    return data.decode("utf-8")
+    return data.decode()
 
 
-def git_diff_lines() -> dict:
-    diff: dict = {}
+def git_diff_lines() -> Dict[str, List[str]]:
+    diff: Dict[str, List[str]] = {}
     for line in git_diff().splitlines():
         LOGGER.debug(line)
         if line.startswith("+"):
@@ -22,12 +22,12 @@ def git_diff_lines() -> dict:
 
 
 def validate_polarion_requirements(
-    polarion_test_ids: list,
+    polarion_test_ids: List[str],
     polarion_project_id: str,
-) -> list:
+) -> List[str]:
     from pylero.work_item import TestCase, Requirement
 
-    tests_with_missing_requirements = []
+    tests_with_missing_requirements: List[str] = []
 
     for _id in polarion_test_ids:
         has_req = False

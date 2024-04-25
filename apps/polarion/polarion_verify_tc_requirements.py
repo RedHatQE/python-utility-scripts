@@ -8,7 +8,6 @@ from apps.polarion.polarion_utils import (
     validate_polarion_requirements,
 )
 from apps.utils import get_util_config
-from typing import Any
 
 LOGGER = get_logger(name="polarion-verify-tc-requirements")
 
@@ -22,7 +21,7 @@ LOGGER = get_logger(name="polarion-verify-tc-requirements")
 )
 @click.option("--project-id", "-p", help="Provide the polarion project id")
 @click.option("--verbosity", default=False, is_flag=True)
-def has_verify(config_file_path: Any, project_id: str, verbosity: bool) -> Any:
+def has_verify(config_file_path: str, project_id: str, verbosity: bool) -> None:
     if verbosity:
         LOGGER.setLevel(logging.DEBUG)
 
