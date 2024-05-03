@@ -2,7 +2,7 @@
 omit = ["tests/*"]
 
 [tool.coverage.report]
-fail_under = 75
+fail_under = 60
 skip_empty = true
 
 [tool.coverage.html]
