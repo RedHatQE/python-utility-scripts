@@ -2,7 +2,7 @@ import shlex
 import subprocess
 from pyhelper_utils.shell import run_command
 
-BASE_COMMAND = "poetry run python apps/polarion/polarion_set_automated.py"
+BASE_COMMAND = "poetry run python apps/polarion/polarion_set_automated.py --verbose"
 
 
 def test_missing_project_id_set_automated():

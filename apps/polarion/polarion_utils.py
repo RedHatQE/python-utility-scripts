@@ -23,7 +23,7 @@ def git_diff() -> str:
 def git_diff_lines() -> Dict[str, List[str]]:
     diff: Dict[str, List[str]] = {}
     for line in git_diff().splitlines():
-        LOGGER.debug(line)
+        LOGGER.info(line)
         if line.startswith("+"):
             diff.setdefault("added", []).append(line)
         if line.startswith("-"):
@@ -42,7 +42,7 @@ def validate_polarion_requirements(
 
         for _id in polarion_test_ids:
             has_req = False
-            LOGGER.debug(f"Checking if {_id} verifies any requirement")
+            LOGGER.info(f"Checking if {_id} verifies any requirement")
             tc = TestCase(project_id=polarion_project_id, work_item_id=_id)
             for link in tc.linked_work_items:
                 try:
@@ -91,10 +91,10 @@ def update_polarion_ids(
                 if is_approved:
                     tc.status = APPROVED
                 tc.update()
-                LOGGER.debug(f"Polarion {id}: marked as: {automation_status}, approved status set: {is_approved}")
+                LOGGER.info(f"Polarion {id}: marked as: {automation_status}, approved status set: {is_approved}")
                 updated_ids.setdefault("updated", []).append(id)
             except PyleroLibException as polarion_exception:
                 error = f"{id}: {polarion_exception}"
-                LOGGER.warning(error)
+                LOGGER.error(error)
                 updated_ids.setdefault("failed", []).append(error)
     return updated_ids

@@ -7,7 +7,7 @@ BASE_COMMAND = "poetry run python apps/polarion/polarion_verify_tc_requirements.
 
 def test_missing_project_id():
     rc, _, err = run_command(
-        command=shlex.split(BASE_COMMAND),
+        command=shlex.split(f"{BASE_COMMAND} --verbose"),
         verify_stderr=False,
         check=False,
         capture_output=False,

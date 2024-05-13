@@ -1,2 +1,6 @@
-class PolarionTestCaseApprovalFailed(Exception):
+class PolarionTestCaseApprovalError(Exception):
+    pass
+
+
+class PolarionTestCaseWithoutRequirementError(Exception):
     pass
