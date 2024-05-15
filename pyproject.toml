@@ -50,14 +50,14 @@ pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requ
 
 [tool.poetry.dependencies]
 python = "^3.8"
-python-simple-logger = "^1.0.8"
-pylero = "^0.0.8"
-pyhelper-utils = "^0.0.3"
-pytest-mock = "^3.14.0"
-pyyaml = "^6.0.1"
+python-simple-logger = "*"
+pylero = "*"
+pyhelper-utils = "*"
+pytest-mock = "*"
+pyyaml = "*"
 
 [tool.poetry.group.dev.dependencies]
-ipdb = "^0.13.13"
+ipdb = "*"
 ipython = "*"
 
 
@@ -66,8 +66,8 @@ enable = true
 pattern = "((?P<epoch>\\d+)!)?(?P<base>\\d+(\\.\\d+)*)"
 
 [tool.poetry.group.test.dependencies]
-pytest = "^8.0.0"
-pytest-cov = "^4.1.0"
+pytest = "*"
+pytest-cov = "*"
 
 [tool.poetry-dynamic-versioning.substitution]
 files = ["VERSION"]
