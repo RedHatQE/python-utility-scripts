@@ -797,12 +797,12 @@ rich = ">=13.7.1,<14.0.0"
 
 [[package]]
 name = "pylero"
-version = "0.0.8"
+version = "0.0.9"
 description = "Python SDK for Polarion"
 optional = false
 python-versions = "*"
 files = [
-    {file = "pylero-0.0.8.tar.gz", hash = "sha256:a41e3cc73e8787846fbfde49495c3e03dca3183e074edf9249ea2437961704e4"},
+    {file = "pylero-0.0.9.tar.gz", hash = "sha256:e0efaeed55088aee0f982dbf4f97349d50baee44704bc29c5a8176b701c7b139"},
 ]
 
 [package.dependencies]
@@ -1130,4 +1130,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "9f8ccbc9a7751ffb652e982abd927c9c8bef2ef22bac6aff987b158dc05b1657"
+content-hash = "a7440650e3effbdd31685006eb821962e4432ff61c2d7b0b40e9e492c90b8580"
