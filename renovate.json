@@ -1,3 +1,19 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json"
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "packageRules": [
+    {
+      "matchPackagePatterns": [
+        "python-simple-logger",
+        "pylero",
+        "pyhelper-utils",
+        "pytest-mock",
+        "pyyaml",
+        "ipdb",
+        "ipython",
+        "pytest",
+        "pytest-cov"
+      ],
+      "groupName": "poetry-deps"
+    }
+  ]
 }
