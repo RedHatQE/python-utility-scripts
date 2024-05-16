@@ -51,8 +51,8 @@ pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requ
 [tool.poetry.dependencies]
 python = "^3.8"
 python-simple-logger = "^1.0.8"
-pylero = "^0.0.8"
-pyhelper-utils = "^0.0.3"
+pylero = "^0.0.9"
+pyhelper-utils = "^0.0.17"
 pytest-mock = "^3.14.0"
 pyyaml = "^6.0.1"
 
