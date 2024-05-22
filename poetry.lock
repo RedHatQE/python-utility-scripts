@@ -780,12 +780,12 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyhelper-utils"
-version = "0.0.18"
+version = "0.0.19"
 description = "Collective utility functions for python projects"
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "pyhelper_utils-0.0.18.tar.gz", hash = "sha256:33f1ba2559a701aa16c5b6384bb5acbd317b0acd69625fd43c1eb15fbbbc7c63"},
+    {file = "pyhelper_utils-0.0.19.tar.gz", hash = "sha256:2e38e32555118a68823eafcb4201694605d42d11b004a99b30dd5963096fd40a"},
 ]
 
 [package.dependencies]
@@ -797,12 +797,12 @@ rich = ">=13.7.1,<14.0.0"
 
 [[package]]
 name = "pylero"
-version = "0.0.9"
+version = "0.1.0"
 description = "Python SDK for Polarion"
 optional = false
 python-versions = "*"
 files = [
-    {file = "pylero-0.0.9.tar.gz", hash = "sha256:e0efaeed55088aee0f982dbf4f97349d50baee44704bc29c5a8176b701c7b139"},
+    {file = "pylero-0.1.0.tar.gz", hash = "sha256:12adad19e83275fda45d16eb5057f95b6163838d0bbfad467f577bc213a206d2"},
 ]
 
 [package.dependencies]
@@ -910,12 +910,12 @@ six = "*"
 
 [[package]]
 name = "python-simple-logger"
-version = "1.0.23"
+version = "1.0.25"
 description = "A simple logger for python"
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "python_simple_logger-1.0.23.tar.gz", hash = "sha256:90f7f7be73fdf17e904e5808fbe1e0038ebc0aa272553c0ded79dc65dffd3447"},
+    {file = "python_simple_logger-1.0.25.tar.gz", hash = "sha256:ec1bf55b2c514fee4d73ec9b0d4ec2701e149adb2b49ace91bd4eb6b9bb3318e"},
 ]
 
 [package.dependencies]
@@ -1130,4 +1130,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "0424d43b28034bddc3f992df4626e1bbc50042146c6ed9a61b0f43bf81e6805f"
+content-hash = "73cd2226a43037442515a4a66e68f8def338dbb78af612f614f091b01959d60c"
