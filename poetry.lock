@@ -780,12 +780,12 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyhelper-utils"
-version = "0.0.17"
+version = "0.0.21"
 description = "Collective utility functions for python projects"
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "pyhelper_utils-0.0.17.tar.gz", hash = "sha256:9d1be6097c7d1b093e85c7fa49bf52f5b557939596b83f3403e5f40bbcdd3a28"},
+    {file = "pyhelper_utils-0.0.21.tar.gz", hash = "sha256:4a8a0dbcbb4145851c43d28953e6dc6b51644bd72b2411c343fbf6fe40ae9e0b"},
 ]
 
 [package.dependencies]
@@ -797,12 +797,12 @@ rich = ">=13.7.1,<14.0.0"
 
 [[package]]
 name = "pylero"
-version = "0.0.9"
+version = "0.1.0"
 description = "Python SDK for Polarion"
 optional = false
 python-versions = "*"
 files = [
-    {file = "pylero-0.0.9.tar.gz", hash = "sha256:e0efaeed55088aee0f982dbf4f97349d50baee44704bc29c5a8176b701c7b139"},
+    {file = "pylero-0.1.0.tar.gz", hash = "sha256:12adad19e83275fda45d16eb5057f95b6163838d0bbfad467f577bc213a206d2"},
 ]
 
 [package.dependencies]
@@ -837,13 +837,13 @@ tests = ["hypothesis (>=3.27.0)", "pytest (>=3.2.1,!=3.3.0)"]
 
 [[package]]
 name = "pytest"
-version = "8.2.0"
+version = "8.2.1"
 description = "pytest: simple powerful testing with Python"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "pytest-8.2.0-py3-none-any.whl", hash = "sha256:1733f0620f6cda4095bbf0d9ff8022486e91892245bb9e7d5542c018f612f233"},
-    {file = "pytest-8.2.0.tar.gz", hash = "sha256:d507d4482197eac0ba2bae2e9babf0672eb333017bcedaa5fb1a3d42c1174b3f"},
+    {file = "pytest-8.2.1-py3-none-any.whl", hash = "sha256:faccc5d332b8c3719f40283d0d44aa5cf101cec36f88cde9ed8f2bc0538612b1"},
+    {file = "pytest-8.2.1.tar.gz", hash = "sha256:5046e5b46d8e4cac199c373041f26be56fdb81eb4e67dc11d4e10811fc3408fd"},
 ]
 
 [package.dependencies]
@@ -910,12 +910,12 @@ six = "*"
 
 [[package]]
 name = "python-simple-logger"
-version = "1.0.23"
+version = "1.0.26"
 description = "A simple logger for python"
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "python_simple_logger-1.0.23.tar.gz", hash = "sha256:90f7f7be73fdf17e904e5808fbe1e0038ebc0aa272553c0ded79dc65dffd3447"},
+    {file = "python_simple_logger-1.0.26.tar.gz", hash = "sha256:e5af7c0ea09399d898ffbc0556434003953fec44a914dca4883cf1c428c413b5"},
 ]
 
 [package.dependencies]
@@ -1130,4 +1130,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "71bf75ccea840a2cb69d57cd39a611e5a5c7ea74807dc48812864eba5358d733"
+content-hash = "0abb0253e070a115f1db1d80c3e6cdae5d1de1f56460147984370e09d298c9ed"
