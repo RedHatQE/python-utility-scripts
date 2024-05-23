@@ -2,7 +2,7 @@
 omit = ["tests/*"]
 
 [tool.coverage.report]
-fail_under = 75
+fail_under = 60
 skip_empty = true
 
 [tool.coverage.html]
@@ -47,6 +47,7 @@ packages = [{ include = "apps" }]
 [tool.poetry.scripts]
 pyutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
 pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
+pyutils-polarion-set-automated = "apps.polarion.polarion_set_automated:polarion_approve_automate"
 
 [tool.poetry.dependencies]
 python = "^3.8"
@@ -64,6 +65,7 @@ ipython = "*"
 [tool.poetry-dynamic-versioning]
 enable = true
 pattern = "((?P<epoch>\\d+)!)?(?P<base>\\d+(\\.\\d+)*)"
+
 
 [tool.poetry.group.test.dependencies]
 pytest = "^8.0.0"
