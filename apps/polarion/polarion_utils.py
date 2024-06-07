@@ -15,14 +15,14 @@ NOT_AUTOMATED = "notautomated"
 APPROVED = "approved"
 
 
-def git_diff(branch_name: str) -> str:
-    data = subprocess.check_output(shlex.split(f"git diff {branch_name} HEAD"))
+def git_diff(branch: str) -> str:
+    data = subprocess.check_output(shlex.split(f"git diff {branch} HEAD"))
     return data.decode()
 
 
-def git_diff_lines(branch_name: str) -> Dict[str, List[str]]:
+def git_diff_lines(branch: str) -> Dict[str, List[str]]:
     diff: Dict[str, List[str]] = {}
-    for line in git_diff(branch_name=branch_name).splitlines():
+    for line in git_diff(branch=branch).splitlines():
         LOGGER.info(line)
         if line.startswith("+"):
             diff.setdefault("added", []).append(line)
@@ -58,10 +58,10 @@ def validate_polarion_requirements(
     return tests_with_missing_requirements
 
 
-def find_polarion_ids(polarion_project_id: str, string_to_match: str, branch_name: str) -> List[str]:
+def find_polarion_ids(polarion_project_id: str, string_to_match: str, branch: str) -> List[str]:
     return re.findall(
         rf"pytest.mark.polarion.*({polarion_project_id}-[0-9]+)",
-        "\n".join(git_diff_lines(branch_name=branch_name).get(string_to_match, [])),
+        "\n".join(git_diff_lines(branch=branch).get(string_to_match, [])),
         re.MULTILINE | re.IGNORECASE,
     )
 

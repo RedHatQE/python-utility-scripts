@@ -9,7 +9,7 @@ This script uses [pylero](https://github.com/RedHatQE/pylero) and expects .pyler
 ## Usage
 ```bash
 pyutils-polarion-verify-tc-requirements --help
-pyutils-polarion-verify-tc-requirements --project_id <project_id> --branch-name <branch_to_compare_to>
+pyutils-polarion-verify-tc-requirements --project_id <project_id> --branch <remote_branch_to_compare_to>
 ```
 
 ## Config file
@@ -22,14 +22,14 @@ To specify polation project id for polarion scripts, it can be added to the conf
 ```yaml
 pyutils-polarion-verify-tc-requirements:
   project_id: "<project_id>"
-  branch_name: "<branch_to_compare_to>"
+  branch: "<remote_branch_to_compare_to>"
 ```
-This would run the polarion requirement check against Polarion project <project_id>
+This would run the polarion requirement check against Polarion project <project_id> and remote branch <remote_branch_to_compare_to>
 
-To run from CLI with `--project-id` and `--branch-name`
+To run from CLI with `--project-id` and `--branch`
 
 ```bash
-pyutils-polarion-verify-tc-requirements  --project-id 'my_project_id' --branch-name "origin/main"
+pyutils-polarion-verify-tc-requirements  --project-id 'my_project_id' --branch "origin/main"
 ```
 
 
@@ -42,7 +42,7 @@ This script uses [pylero](https://github.com/RedHatQE/pylero) and expects .pyler
 ## Usage
 ```bash
 pyutils-polarion-set-automated --help
-pyutils-polarion-set-automated --project_id <project_id> --branch-name <branch_to_compare_to>
+pyutils-polarion-set-automated --project_id <project_id> --branch <remote_branch_to_compare_to>
 ```
 
 ## Config file
@@ -55,12 +55,12 @@ To specify polation project id for polarion scripts, it can be added to the conf
 ```yaml
 pyutils-polarion-set-automated:
   project_id: "<project_id>"
-  branch_name: ""<branch_to_compare_to>"
+  branch: "<remote_branch_to_compare_to>"
 ```
-This would run the polarion requirement check against Polarion project <project_id>
+This would run the polarion requirement check against Polarion project <project_id> and remote branch <remote_branch_to_compare_to>
 
-To run from CLI with `--project-id` and `--branch-name`
+To run from CLI with `--project-id` and `--branch`
 
 ```bash
-pyutils-polarion-set-automated  --project-id 'my_project_id' --branch-name "origin/main"
+pyutils-polarion-set-automated  --project-id 'my_project_id' --branch "origin/main"
 ```
