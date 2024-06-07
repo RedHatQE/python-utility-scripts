@@ -9,7 +9,7 @@ This script uses [pylero](https://github.com/RedHatQE/pylero) and expects .pyler
 ## Usage
 ```bash
 pyutils-polarion-verify-tc-requirements --help
-pyutils-polarion-verify-tc-requirements --project_id <project_id>
+pyutils-polarion-verify-tc-requirements --project_id <project_id> --branch-name <branch_to_compare_to>
 ```
 
 ## Config file
@@ -20,13 +20,47 @@ To specify polation project id for polarion scripts, it can be added to the conf
 ### Example:
 
 ```yaml
-pyutils-polarion-verify-tc-requirements :
+pyutils-polarion-verify-tc-requirements:
   project_id: "<project_id>"
+  branch_name: "<branch_to_compare_to>"
 ```
 This would run the polarion requirement check against Polarion project <project_id>
 
-To run from CLI with `--project-id`
+To run from CLI with `--project-id` and `--branch-name`
 
 ```bash
-pyutils-polarion-verify-tc-requirements  --project-id 'my_project_id'
+pyutils-polarion-verify-tc-requirements  --project-id 'my_project_id' --branch-name "origin/main"
+```
+
+
+## pyutils-polarion-set-automated
+Utility to mark newly added test cases in a pytest repository as approved automatically.
+
+## Requirements
+This script uses [pylero](https://github.com/RedHatQE/pylero) and expects .pylero config file to be present in current directory or user's home directory.
+
+## Usage
+```bash
+pyutils-polarion-set-automated --help
+pyutils-polarion-set-automated --project_id <project_id> --branch-name <branch_to_compare_to>
+```
+
+## Config file
+To specify polation project id for polarion scripts, it can be added to the config file:
+`~/.config/python-utility-scripts/config.yaml`
+
+
+### Example:
+
+```yaml
+pyutils-polarion-set-automated:
+  project_id: "<project_id>"
+  branch_name: ""<branch_to_compare_to>"
+```
+This would run the polarion requirement check against Polarion project <project_id>
+
+To run from CLI with `--project-id` and `--branch-name`
+
+```bash
+pyutils-polarion-set-automated  --project-id 'my_project_id' --branch-name "origin/main"
 ```

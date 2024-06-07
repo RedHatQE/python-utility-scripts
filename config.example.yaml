@@ -5,5 +5,7 @@ pyutils-unusedcode:
   - "my_exclude_function_prefix"
 pyutils-polarion-verify-tc-requirements:
   project_id: "ABCDEF"
+  branch_name: "origin/main"
 pyutils-polarion-set-automated:
   project_id: "ABCDEF"
+  branch_name: "origin/main"
