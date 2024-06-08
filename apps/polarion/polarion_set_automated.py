@@ -20,12 +20,14 @@ def approve_tests(polarion_project_id: str, added_ids: List[str]) -> Dict[str, L
     )
 
 
-def remove_approved_tests(polarion_project_id: str, added_ids: Optional[List[str]] = None) -> Dict[str, List[str]]:
+def remove_approved_tests(
+    polarion_project_id: str, branch: str, added_ids: Optional[List[str]] = None
+) -> Dict[str, List[str]]:
     removed_polarions = {}
     added_ids = added_ids or []
-    if removed_ids := set(find_polarion_ids(polarion_project_id=polarion_project_id, string_to_match="removed")) - set(
-        added_ids
-    ):
+    if removed_ids := set(
+        find_polarion_ids(polarion_project_id=polarion_project_id, string_to_match="removed", branch=branch)
+    ) - set(added_ids):
         LOGGER.info(f"Following polarion ids were removed: {removed_ids}")
         removed_polarions = update_polarion_ids(
             polarion_ids=list(removed_ids), project_id=polarion_project_id, is_automated=False
@@ -42,8 +44,9 @@ def remove_approved_tests(polarion_project_id: str, added_ids: Optional[List[str
     default=os.path.expanduser("~/.config/python-utility-scripts/config.yaml"),
 )
 @click.option("--project-id", "-p", help="Provide the polarion project id")
+@click.option("--branch", "-b", help="Provide the github remote branch to run against", default="origin/main")
 @click.option("--verbose", default=False, is_flag=True)
-def polarion_approve_automate(config_file_path: str, project_id: str, verbose: bool) -> None:
+def polarion_approve_automate(config_file_path: str, project_id: str, branch: str, verbose: bool) -> None:
     if verbose:
         LOGGER.setLevel(logging.INFO)
     else:
@@ -52,11 +55,13 @@ def polarion_approve_automate(config_file_path: str, project_id: str, verbose: b
         config_file_path=config_file_path, util_name="pyutils-polarion-set-automated"
     )
     added_polarions = {}
-    if added_ids := find_polarion_ids(polarion_project_id=polarion_project_id, string_to_match="added"):
+    if added_ids := find_polarion_ids(polarion_project_id=polarion_project_id, string_to_match="added", branch=branch):
         added_polarions = approve_tests(polarion_project_id=polarion_project_id, added_ids=added_ids)
         LOGGER.info(f"Following polarion ids were marked automated and approved: {added_polarions.get('updated')}")
 
-    removed_polarions = remove_approved_tests(polarion_project_id=polarion_project_id, added_ids=added_ids)
+    removed_polarions = remove_approved_tests(
+        polarion_project_id=polarion_project_id, added_ids=added_ids, branch=branch
+    )
     if removed_polarions.get("failed") or added_polarions.get("failed"):
         error = "Following polarion ids updates failed."
         if removed_polarions.get("failed"):
