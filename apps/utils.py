@@ -80,7 +80,6 @@ def all_python_files() -> Iterable[str]:
     for root, _, files in os.walk(os.path.abspath(os.curdir)):
         if [_dir for _dir in exclude_dirs if _dir in root]:
             continue
-        LOGGER.info(root)
         for filename in files:
             if filename.endswith(".py"):
                 yield os.path.join(root, filename)
