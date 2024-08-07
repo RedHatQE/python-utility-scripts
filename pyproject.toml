@@ -48,6 +48,8 @@ packages = [{ include = "apps" }]
 pyutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
 pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
 pyutils-polarion-set-automated = "apps.polarion.polarion_set_automated:polarion_approve_automate"
+pyutils-jira = "apps.jira_utils.get_jira_information:get_jira_mismatch"
+
 
 [tool.poetry.dependencies]
 python = "^3.8"
@@ -56,6 +58,8 @@ pylero = "^0.1.0"
 pyhelper-utils = "^0.0.31"
 pytest-mock = "^3.14.0"
 pyyaml = "^6.0.1"
+jira = "^3.6.0"
+retry2 = "^0.9.5"
 
 [tool.poetry.group.dev.dependencies]
 ipdb = "^0.13.13"
