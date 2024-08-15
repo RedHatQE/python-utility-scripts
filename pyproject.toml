@@ -53,7 +53,7 @@ pyutils-polarion-set-automated = "apps.polarion.polarion_set_automated:polarion_
 python = "^3.8"
 python-simple-logger = "^1.0.8"
 pylero = "^0.1.0"
-pyhelper-utils = "^0.0.34"
+pyhelper-utils = "^0.0.35"
 pytest-mock = "^3.14.0"
 pyyaml = "^6.0.1"
 
