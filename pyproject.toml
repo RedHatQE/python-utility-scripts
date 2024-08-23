@@ -59,7 +59,7 @@ pyhelper-utils = "^0.0.41"
 pytest-mock = "^3.14.0"
 pyyaml = "^6.0.1"
 jira = "^3.6.0"
-retry2 = "^0.9.5"
+tenacity = "^9.0.0"
 
 [tool.poetry.group.dev.dependencies]
 ipdb = "^0.13.13"

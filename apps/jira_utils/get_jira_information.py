@@ -30,21 +30,32 @@ LOGGER = get_logger(name=__name__)
     type=ListParamType(),
     required=False,
 )
+@click.option(
+    "--jira-issue-pattern",
+    help="Provide the regex for Jira ids, default is ([A-Z]+-[0-9]+)",
+    type=click.STRING,
+    default="([A-Z]+-[0-9]+)",
+)
 @click.option("--verbose", default=False, is_flag=True)
-def get_jira_mismatch(jira_cfg_file: Any, jira_target_versions: Any, verbose: bool) -> Any:
+def get_jira_mismatch(
+    jira_cfg_file: str, jira_target_versions: list[str], jira_issue_pattern: str, verbose: bool
+) -> None:
     if verbose:
         LOGGER.setLevel(logging.DEBUG)
     else:
         logging.disable(logging.CRITICAL)
     config_dict = get_util_config(util_name="pyutils-jira", config_file_path=jira_cfg_file)
-    if not (config_dict.get("url") and config_dict.get("token")):
-        raise JiraInvalidConfigFileError("Jira config file must contain valid url and token.")
-    jira_connector = JiraConnector(token=config_dict["token"], url=config_dict["url"])
+    jira_url = config_dict.get("url")
+    jira_token = config_dict.get("token")
+    jira_issue_pattern = config_dict.get("issue_pattern", jira_issue_pattern)
+    if not (jira_url and jira_token and jira_issue_pattern):
+        raise JiraInvalidConfigFileError("Jira config file must contain valid url, token or issue pattern.")
+    jira_connector = JiraConnector(token=jira_token, url=jira_url)
     jira_error: Dict[str, Dict[str, Any]] = {"status_mismatch": {}, "version_mismatch": {}, "connection_error": {}}
-    resolved_status = config_dict.get("resolved_statuses", DEFAULT_RESOLVED_STATUS) 
+    resolved_status = config_dict.get("resolved_statuses", DEFAULT_RESOLVED_STATUS)
     jira_target_versions = jira_target_versions or config_dict.get("jira_target_versions", [])
     skip_project_ids = config_dict.get("skip_project_ids", [])
-    for file_name in (jira_id_dict := get_jiras_from_python_files()):
+    for file_name in (jira_id_dict := get_jiras_from_python_files(issue_pattern=jira_issue_pattern)):
         for jira_id in jira_id_dict[file_name]:
             try:
                 # check closed status:

@@ -9,3 +9,11 @@ pyutils-polarion-verify-tc-requirements:
 pyutils-polarion-set-automated:
   project_id: "ABCDEF"
   branch: "origin/main"
+pyutils-jira:
+  url: <jira url>
+  token: <jira token>
+  resolved_statuses:
+  - verified
+  - release pending
+  - closed
+  issue_pattern: "([A-Z]+-[0-9]+)"

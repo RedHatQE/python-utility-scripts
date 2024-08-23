@@ -1176,19 +1176,6 @@ files = [
 requests = ">=2.0.1,<3.0.0"
 
 [[package]]
-name = "retry2"
-version = "0.9.5"
-description = "Easy to use retry decorator."
-optional = false
-python-versions = ">=2.6"
-files = [
-    {file = "retry2-0.9.5-py2.py3-none-any.whl", hash = "sha256:f7fee13b1e15d0611c462910a6aa72a8919823988dd0412152bc3719c89a4e55"},
-]
-
-[package.dependencies]
-decorator = ">=3.4.2"
-
-[[package]]
 name = "rich"
 version = "13.7.1"
 description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
@@ -1247,6 +1234,21 @@ files = [
     {file = "suds-1.1.2-py3-none-any.whl", hash = "sha256:e421744c393d876127f1996be4d7c6154476c0b0f543f9cb436f4add5b916c9d"},
     {file = "suds-1.1.2.tar.gz", hash = "sha256:1d5cfa74117193b244a4233f246c483d9f41198b448c5f14a8bad11c4f649f2b"},
 ]
+
+[[package]]
+name = "tenacity"
+version = "9.0.0"
+description = "Retry code until it succeeds"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "tenacity-9.0.0-py3-none-any.whl", hash = "sha256:93de0c98785b27fcf659856aa9f54bfbd399e29969b0621bc7f762bd441b4539"},
+    {file = "tenacity-9.0.0.tar.gz", hash = "sha256:807f37ca97d62aa361264d497b0e31e92b8027044942bfa756160d908320d73b"},
+]
+
+[package.extras]
+doc = ["reno", "sphinx"]
+test = ["pytest", "tornado (>=4.5)", "typeguard"]
 
 [[package]]
 name = "tomli"

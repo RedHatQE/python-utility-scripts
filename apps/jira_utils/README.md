@@ -34,6 +34,7 @@ pyutils-jira:
   jira_target_versions:
   - 1.0.0
   - 2.0.1
+  issue_pattern: "([A-Z]+-[0-9]+)"
 ```
 This would skip version checks on any jira ids associated with project ABC and DEF
 This would also check if the current repository branch is pointing to any jira card that is not targeted for 1.0.0 or 2.0.1 version
