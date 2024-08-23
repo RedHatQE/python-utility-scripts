@@ -40,7 +40,7 @@ def get_jira_mismatch(jira_cfg_file: Any, jira_target_versions: Any, verbose: bo
     if not (config_dict.get("url") and config_dict.get("token")):
         raise JiraInvalidConfigFileError("Jira config file must contain valid url and token.")
     jira_connector = JiraConnector(token=config_dict["token"], url=config_dict["url"])
-    jira_error: Dict[str, Any] = {"status_mismatch": {}, "version_mismatch": {}, "connection_error": {}}
+    jira_error: Dict[str, Dict[str, Any]] = {"status_mismatch": {}, "version_mismatch": {}, "connection_error": {}}
     resolved_status = config_dict.get("resolved_statuses", DEFAULT_RESOLVED_STATUS) 
     jira_target_versions = jira_target_versions or config_dict.get("jira_target_versions", [])
     skip_project_ids = config_dict.get("skip_project_ids", [])
