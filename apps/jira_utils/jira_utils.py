@@ -61,8 +61,8 @@ def get_jiras_from_python_files(issue_pattern: str) -> Dict[str, Any]:
         with open(filename) as fd:
             file_content = []
             for line in fd.readlines():
-                # if <skip-jira_utils-check> appears in a line, exclude that line from jira check
-                if "<skip-jira_utils-check>" in line:
+                # if <skip-jira-utils-check> appears in a line, exclude that line from jira check
+                if "<skip-jira-utils-check>" in line:
                     continue
                 else:
                     file_content.append(line)

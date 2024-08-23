@@ -45,7 +45,7 @@ To run from CLI with `--jira-target-versions`
 pyutils-unusedcode --jira-target-versions '1.0.0,2.0.1'
 ```
 #### Note:
-To mark to skip a jira from these checks, one can add `<skip-jira_utils-check>` as a comment to the same line containing the specific jira
+To mark to skip a jira from these checks, one can add `<skip-jira-utils-check>` as a comment to the same line containing the specific jira
 
 Example:
 ```bash
