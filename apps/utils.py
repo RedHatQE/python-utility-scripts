@@ -82,5 +82,5 @@ def all_python_files() -> Iterable[str]:
             continue
 
         for filename in files:
-            if filename.endswith(".py") and filename != os.path.split(__file__)[-1]:
+            if filename.endswith(".py"):
                 yield os.path.join(root, filename)
