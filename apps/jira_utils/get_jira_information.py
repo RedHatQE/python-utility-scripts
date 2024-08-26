@@ -58,7 +58,7 @@ def get_jira_mismatch(
     for file_name in (jira_id_dict := get_jiras_from_python_files(issue_pattern=jira_issue_pattern)):
         for jira_id in jira_id_dict[file_name]:
             try:
-                # check closed status:
+                # check resolved status:
                 jira_issue_metadata = jira_connector.get_issue(jira_id=jira_id).fields
                 current_jira_status = jira_issue_metadata.status.name.lower()
                 if current_jira_status in resolved_status:
