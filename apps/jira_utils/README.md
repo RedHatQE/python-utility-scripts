@@ -42,7 +42,7 @@ This would also check if the current repository branch is pointing to any jira c
 To run from CLI with `--jira-target-versions`
 
 ```bash
-pyutils-unusedcode --jira-target-versions '1.0.0,2.0.1'
+pyutils-jira --jira-target-versions '1.0.0,2.0.1'
 ```
 #### Note:
 To mark to skip a jira from these checks, one can add `<skip-jira-utils-check>` as a comment to the same line containing the specific jira
