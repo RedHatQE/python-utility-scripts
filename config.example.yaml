@@ -17,3 +17,9 @@ pyutils-jira:
   - release pending
   - closed
   issue_pattern: "([A-Z]+-[0-9]+)"
+  skip_project_ids:
+    - ABC
+    - DEF
+  jira_target_versions:
+    - 1.0.0
+  version_string_not_targeted_jiras: "not-targeted"

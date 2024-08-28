@@ -3,14 +3,19 @@ import os
 import re
 
 import click
-from jira import JIRAError
+from jira import JIRAError, JIRA
 
 from simple_logger.logger import get_logger
 
-from apps.jira_utils.exceptions import JiraValidationError, JiraInvalidConfigFileError
-from apps.jira_utils.jira_utils import get_jiras_from_python_files, JiraConnector
+from apps.jira_utils.jira_utils import (
+    get_jiras_from_python_files,
+    JiraInvalidConfigFileError,
+    JiraValidationError,
+    get_issue,
+)
+
 from apps.utils import ListParamType, get_util_config
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 DEFAULT_RESOLVED_STATUS = ["verified", "release pending", "closed", "resolved"]
 
@@ -21,7 +26,7 @@ LOGGER = get_logger(name=__name__)
 @click.option(
     "--jira-cfg-file",
     help="Provide absolute path to the jira_utils config file. ",
-    type=click.Path(),
+    type=click.Path(exists=True),
     default=os.path.expanduser("~/.config/python-utility-scripts/jira_utils/config.cfg"),
 )
 @click.option(
@@ -32,13 +37,25 @@ LOGGER = get_logger(name=__name__)
 )
 @click.option(
     "--jira-issue-pattern",
-    help="Provide the regex for Jira ids, default is ([A-Z]+-[0-9]+)",
+    help="Provide the regex for Jira ids",
     type=click.STRING,
+    show_default=True,
     default="([A-Z]+-[0-9]+)",
+)
+@click.option(
+    "--version-string-not-targeted-jiras",
+    help="Provide possible version strings for not yet targeted jiras",
+    type=click.STRING,
+    show_default=True,
+    default="vfuture",
 )
 @click.option("--verbose", default=False, is_flag=True)
 def get_jira_mismatch(
-    jira_cfg_file: str, jira_target_versions: list[str], jira_issue_pattern: str, verbose: bool
+    jira_cfg_file: str,
+    jira_target_versions: List[str],
+    jira_issue_pattern: str,
+    version_string_not_targeted_jiras: str,
+    verbose: bool,
 ) -> None:
     if verbose:
         LOGGER.setLevel(logging.DEBUG)
@@ -48,21 +65,22 @@ def get_jira_mismatch(
     jira_url = config_dict.get("url")
     jira_token = config_dict.get("token")
     jira_issue_pattern = config_dict.get("issue_pattern", jira_issue_pattern)
-    if not (jira_url and jira_token and jira_issue_pattern):
-        raise JiraInvalidConfigFileError("Jira config file must contain valid url, token or issue pattern.")
-    jira_connector = JiraConnector(token=jira_token, url=jira_url)
-    jira_error: Dict[str, Dict[str, Any]] = {"status_mismatch": {}, "version_mismatch": {}, "connection_error": {}}
+    if not (jira_url and jira_token):
+        raise JiraInvalidConfigFileError("Jira config file must contain valid url or token.")
+    jira_connection = JIRA(token_auth=jira_token, options={"server": jira_url})
+    jira_error: Dict[str, Dict[str, Any]] = {}
     resolved_status = config_dict.get("resolved_statuses", DEFAULT_RESOLVED_STATUS)
     jira_target_versions = jira_target_versions or config_dict.get("jira_target_versions", [])
     skip_project_ids = config_dict.get("skip_project_ids", [])
-    for file_name in (jira_id_dict := get_jiras_from_python_files(issue_pattern=jira_issue_pattern)):
+    not_targeted_version_str = config_dict.get("version_string_not_targeted_jiras", version_string_not_targeted_jiras)
+    for file_name in (jira_id_dict := get_jiras_from_python_files(issue_pattern=jira_issue_pattern, jira_url=jira_url)):
         for jira_id in jira_id_dict[file_name]:
             try:
                 # check resolved status:
-                jira_issue_metadata = jira_connector.get_issue(jira_id=jira_id).fields
+                jira_issue_metadata = get_issue(jira=jira_connection, jira_id=jira_id).fields
                 current_jira_status = jira_issue_metadata.status.name.lower()
                 if current_jira_status in resolved_status:
-                    jira_error["status_mismatch"].setdefault(file_name, []).append(
+                    jira_error.setdefault("status_mismatch", {}).setdefault(file_name, []).append(
                         f"{jira_id}: current status: {current_jira_status}"
                     )
                 # validate correct target version if provided:
@@ -74,17 +92,17 @@ def get_jira_mismatch(
                         if (jira_issue_metadata.fixVersions)
                         else None
                     )
-                    current_target_version = fix_version.group(1) if fix_version else "vfuture"
+                    current_target_version = fix_version.group(1) if fix_version else not_targeted_version_str
                     if not any([current_target_version == version for version in jira_target_versions]):
-                        jira_error["version_mismatch"].setdefault(file_name, []).append(
+                        jira_error.setdefault("version_mismatch", {}).setdefault(file_name, []).append(
                             f"{jira_id}: target version: {current_target_version}]"
                         )
 
             except JIRAError as exp:
-                jira_error["connection_error"].setdefault(file_name, []).append(
+                jira_error.setdefault("connection_error", {}).setdefault(file_name, []).append(
                     f"{jira_id}: status code: {exp.status_code}, details: {exp.text}]."
                 )
-    jira_error = {key: value for key, value in jira_error.items() if value}
+    # https://issues.redhat.com/browse/RHEL-40899
     if jira_error.values():
         error = "Following Jira ids failed jira check:\n"
         if jira_error.get("status_mismatch"):
