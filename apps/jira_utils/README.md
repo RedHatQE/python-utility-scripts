@@ -1,7 +1,7 @@
 # pyutils-jira
 Helper to identify wrong jira card references in a repository files. e.g. closed tickets or tickets with not relevant target versions in a test repository branch would be identified.
 It looks for following patterns in files of a pytest repository:
-```bash
+```text
     - jira_id=ABC-12345  # When jira id is present in a function call
     - <jira url>/browse/ABC-12345  # when jira is in a link in comments
     - pytest.mark.jira_utils(ABC-12345)  # when jira is in a marker
@@ -15,8 +15,7 @@ pyutils-jira --help
 ```
 
 ## Config file
-A config file with the jira connection parameters like url, token, resolved_statuses, skip_project_ids, jira_target_versions should be passed to command line option `--jira-cfg-file`
-By default config file location `~/.config/python-utility-scripts/jira_utils/config.cfg` is used, but the location can be overwritten by using the `--jira-cfg-file` option.
+A config file with the jira connection parameters like url, token, resolved_statuses, skip_project_ids, target_versions should be passed to command line option `--cfg-file`
 
 ### Example:
 
@@ -31,7 +30,7 @@ pyutils-jira:
   skip_project_ids:
     - ABC
     - DEF
-  jira_target_versions:
+  target_versions:
   - 1.0.0
   - 2.0.1
   issue_pattern: "([A-Z]+-[0-9]+)"
@@ -40,21 +39,21 @@ pyutils-jira:
 This would skip version checks on any jira ids associated with project ABC and DEF
 This would also check if the current repository branch is pointing to any jira card that is not targeted for 1.0.0 or 2.0.1 version
 
-To run from CLI with `--jira-target-versions`
+To run from CLI with `--target-versions`
 
 ```bash
-pyutils-jira --jira-target-versions '1.0.0,2.0.1'
+pyutils-jira --target-versions '1.0.0,2.0.1'
 ```
 #### Note:
 To mark to skip a jira from these checks, one can add `<skip-jira-utils-check>` as a comment to the same line containing the specific jira
 
 Example:
-```bash
+```text
  #https://issues.redhat.com/browse/OSD-5716 <skip-jira-utils-check>
  ```
 If resolved_statuses is not provided in config file, by default the following status would be considered as resolved statuses:
 
-```bash
+```text
 ["verified", "release pending", "closed", "resolved"]
 ```
 

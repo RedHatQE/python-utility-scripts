@@ -2,10 +2,18 @@ import re
 from simple_logger.logger import get_logger
 from jira import JIRA, JIRAError, Issue
 from tenacity import retry, retry_if_exception_type, wait_fixed, stop_after_attempt
-from apps.utils import all_python_files
-from typing import Dict, Set, List
+from apps.utils import all_python_files, get_util_config
+from typing import Dict, Set, List, Any
 
 LOGGER = get_logger(name=__name__)
+
+
+class JiraInvalidConfigFileError(Exception):
+    pass
+
+
+class JiraValidationError(Exception):
+    pass
 
 
 @retry(retry=retry_if_exception_type(JIRAError), stop=stop_after_attempt(3), wait=wait_fixed(2))
@@ -103,9 +111,31 @@ def get_jira_information(
     return jira_error_string
 
 
-class JiraInvalidConfigFileError(Exception):
-    pass
+def process_jira_command_line_config_file(
+    cfg_file: str,
+    url: str,
+    token: str,
+    issue_pattern: str,
+    resolved_statuses: List[str],
+    version_string_not_targeted_jiras: str,
+    target_versions: List[str],
+    skip_projects: List[str],
+) -> Dict[str, Any]:
+    # Process all the arguments passed from command line or config file or environment variable
+    config_dict = get_util_config(util_name="pyutils-jira", config_file_path=cfg_file)
+    url = url or config_dict.get("url", "")
+    token = token or config_dict.get("token", "")
+    if not (url and token):
+        raise JiraInvalidConfigFileError("Jira config file must contain valid url or token.")
 
-
-class JiraValidationError(Exception):
-    pass
+    return {
+        "url": url,
+        "token": token,
+        "issue_pattern": issue_pattern or config_dict.get("issue_pattern", ""),
+        "resolved_status": resolved_statuses or config_dict.get("resolved_statuses", []),
+        "not_targeted_version_str": config_dict.get(
+            "version_string_not_targeted_jiras", version_string_not_targeted_jiras
+        ),
+        "target_versions": target_versions or config_dict.get("target_versions", []),
+        "skip_project_ids": skip_projects or config_dict.get("skip_project_ids", []),
+    }
