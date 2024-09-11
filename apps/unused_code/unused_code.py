@@ -2,6 +2,8 @@ import ast
 import logging
 import os
 import subprocess
+import sys
+
 import click
 from simple_logger.logger import get_logger
 
@@ -69,10 +71,7 @@ def is_ignore_function_list(ignore_prefix_list: List[str], function: ast.Functio
 def get_unused_functions(
     config_file_path: Any, exclude_files: Any, exclude_function_prefixes: Any, verbose: bool
 ) -> Any:
-    if verbose:
-        LOGGER.setLevel(logging.DEBUG)
-    else:
-        logging.disable(logging.CRITICAL)
+    LOGGER.setLevel(logging.DEBUG if verbose else logging.INFO)
 
     _unused_functions = []
     unused_code_config = get_util_config(util_name="pyutils-unusedcode", config_file_path=config_file_path)
@@ -104,7 +103,7 @@ def get_unused_functions(
                 )
     if _unused_functions:
         click.echo("\n".join(_unused_functions))
-        raise click.Abort()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
