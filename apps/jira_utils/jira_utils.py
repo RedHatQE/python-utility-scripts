@@ -1,24 +1,19 @@
+from functools import lru_cache
+import sys
 import re
 from simple_logger.logger import get_logger
 from jira import JIRA, JIRAError, Issue
 from tenacity import retry, retry_if_exception_type, wait_fixed, stop_after_attempt
 from apps.utils import all_python_files, get_util_config
-from typing import Dict, Set, List, Any
+from typing import Dict, Set, List, Any, Tuple
 
 LOGGER = get_logger(name=__name__)
 
 
-class JiraInvalidConfigFileError(Exception):
-    pass
-
-
-class JiraValidationError(Exception):
-    pass
-
-
+@lru_cache
 @retry(retry=retry_if_exception_type(JIRAError), stop=stop_after_attempt(3), wait=wait_fixed(2))
 def get_issue(jira: JIRA, jira_id: str) -> Issue:
-    LOGGER.info(f"Retry staistics for {jira_id}: {get_issue.statistics}")
+    LOGGER.debug(f"Retry staistics for {jira_id}: {get_issue.statistics}")
     return jira.issue(id=jira_id, fields="status, issuetype, fixVersions")
 
 
@@ -43,6 +38,7 @@ def get_jira_ids_from_file_content(file_content: str, issue_pattern: str, jira_u
         rf"{jira_url}/browse/{issue_pattern}",
         file_content,
     )
+
     return set(_pytest_jira_marker_bugs + _jira_id_arguments + _jira_url_jiras)
 
 
@@ -70,8 +66,11 @@ def get_jiras_from_python_files(issue_pattern: str, jira_url: str) -> Dict[str, 
                 jira_url=jira_url,
             ):
                 jira_found[filename] = unique_jiras
+
     if jira_found:
-        LOGGER.info(f"Following jiras are found: {jira_found}")
+        _jira_found = "\n\t".join([f"{key}: {val}" for key, val in jira_found.items()])
+        LOGGER.debug(f"Following jiras are found: \n\t{_jira_found}")
+
     return jira_found
 
 
@@ -82,7 +81,8 @@ def get_jira_information(
     resolved_status: List[str],
     jira_target_versions: List[str],
     target_version_str: str,
-) -> str:
+    file_name: str,
+) -> Tuple[str, str]:
     jira_error_string = ""
     try:
         # check resolved status:
@@ -90,10 +90,12 @@ def get_jira_information(
         current_jira_status = jira_issue_metadata.status.name.lower()
         if current_jira_status in resolved_status:
             jira_error_string += f"{jira_id} current status: {current_jira_status} is resolved."
+
         # validate correct target version if provided:
         if jira_target_versions:
             if skip_project_ids and jira_id.startswith(tuple(skip_project_ids)):
-                return jira_error_string
+                return file_name, jira_error_string
+
             fix_version = (
                 re.search(r"([\d.]+)", jira_issue_metadata.fixVersions[0].name)
                 if (jira_issue_metadata.fixVersions)
@@ -108,11 +110,11 @@ def get_jira_information(
     except JIRAError as exp:
         jira_error_string += f"{jira_id} JiraError status code: {exp.status_code}, details: {exp.text}]."
 
-    return jira_error_string
+    return file_name, jira_error_string
 
 
 def process_jira_command_line_config_file(
-    cfg_file: str,
+    config: str,
     url: str,
     token: str,
     issue_pattern: str,
@@ -122,11 +124,12 @@ def process_jira_command_line_config_file(
     skip_projects: List[str],
 ) -> Dict[str, Any]:
     # Process all the arguments passed from command line or config file or environment variable
-    config_dict = get_util_config(util_name="pyutils-jira", config_file_path=cfg_file)
+    config_dict = get_util_config(util_name="pyutils-jira", config_file_path=config)
     url = url or config_dict.get("url", "")
     token = token or config_dict.get("token", "")
     if not (url and token):
-        raise JiraInvalidConfigFileError("Jira config file must contain valid url or token.")
+        LOGGER.error("Jira config file must contain valid url or token.")
+        sys.exit(1)
 
     return {
         "url": url,

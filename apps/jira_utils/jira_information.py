@@ -1,4 +1,5 @@
 import logging
+import sys
 import os
 import concurrent.futures
 
@@ -9,7 +10,6 @@ from simple_logger.logger import get_logger
 
 from apps.jira_utils.jira_utils import (
     get_jiras_from_python_files,
-    JiraValidationError,
     get_jira_information,
     process_jira_command_line_config_file,
 )
@@ -23,15 +23,14 @@ LOGGER = get_logger(name=__name__)
 
 @click.command()
 @click.option(
-    "--cfg-file",
-    help="Provide absolute path to the jira_utils config file. ",
+    "--config",
+    help="Provide absolute path to the jira_utils config file.",
     type=click.Path(exists=True),
 )
 @click.option(
     "--target-versions",
     help="Provide comma separated list of Jira target version, for version validation against a repo branch.",
     type=ListParamType(),
-    required=False,
 )
 @click.option(
     "--skip-projects",
@@ -63,7 +62,7 @@ LOGGER = get_logger(name=__name__)
 )
 @click.option("--verbose", default=False, is_flag=True)
 def get_jira_mismatch(
-    cfg_file: str,
+    config: str,
     target_versions: List[str],
     url: str,
     token: str,
@@ -73,13 +72,15 @@ def get_jira_mismatch(
     version_string_not_targeted_jiras: str,
     verbose: bool,
 ) -> None:
-    if verbose:
-        LOGGER.setLevel(logging.DEBUG)
-    else:
-        logging.disable(logging.CRITICAL)
+    LOGGER.setLevel(logging.DEBUG if verbose else logging.INFO)
+
+    if not (config or token or url):
+        LOGGER.error("Config file or token or url is required")
+        sys.exit(1)
+
     # Process all the arguments passed from command line or config file or environment variable
     jira_config_dict = process_jira_command_line_config_file(
-        cfg_file=cfg_file,
+        config=config,
         url=url,
         token=token,
         resolved_statuses=resolved_statuses,
@@ -96,31 +97,30 @@ def get_jira_mismatch(
         issue_pattern=jira_config_dict["issue_pattern"], jira_url=jira_config_dict["url"]
     ):
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_to_jiras = {
-                executor.submit(
-                    get_jira_information,
-                    jira_object=jira_obj,
-                    jira_id=jira_id,
-                    skip_project_ids=jira_config_dict["skip_project_ids"],
-                    resolved_status=jira_config_dict["resolved_status"],
-                    jira_target_versions=jira_config_dict["target_versions"],
-                    target_version_str=jira_config_dict["not_targeted_version_str"],
-                ): jira_id
-                for jira_id in set.union(*jira_id_dict.values())
-            }
+            for file_name, ids in jira_id_dict.items():
+                for jira_id in ids:
+                    future_to_jiras = {
+                        executor.submit(
+                            get_jira_information,
+                            jira_object=jira_obj,
+                            jira_id=jira_id,
+                            skip_project_ids=jira_config_dict["skip_project_ids"],
+                            resolved_status=jira_config_dict["resolved_status"],
+                            jira_target_versions=jira_config_dict["target_versions"],
+                            target_version_str=jira_config_dict["not_targeted_version_str"],
+                            file_name=file_name,
+                        )
+                    }
 
-            for future in concurrent.futures.as_completed(future_to_jiras):
-                jira_id = future_to_jiras[future]
-                file_names = [file_name for file_name, jiras in jira_id_dict.items() if jira_id in jiras]
-                jira_error_string = future.result()
-                if jira_error_string:
-                    jira_error[jira_id] = f" {file_names}: {jira_error_string}"
+                    for future in concurrent.futures.as_completed(future_to_jiras):
+                        file_name, jira_error_string = future.result()
+                        if jira_error_string:
+                            jira_error[file_name] = jira_error_string
 
     if jira_error:
-        error = f"Following Jira ids failed jira check: {jira_error}\n"
-        LOGGER.error(error)
-        raise JiraValidationError(error)
-    LOGGER.info("Successfully completed Jira validations")
+        _jira_error = "\n\t".join([f"{key}: {val}" for key, val in jira_error.items()])
+        LOGGER.error(f"Following Jira ids failed jira check: \n\t{_jira_error}\n")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
