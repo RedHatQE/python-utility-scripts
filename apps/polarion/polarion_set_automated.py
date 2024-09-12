@@ -2,10 +2,9 @@ from __future__ import annotations
 import logging
 import os
 from simple_logger.logger import get_logger
-
+import sys
 import click
 
-from apps.polarion.exceptions import PolarionTestCaseApprovalError
 from apps.polarion.polarion_utils import get_polarion_project_id, find_polarion_ids, update_polarion_ids
 from typing import List, Dict, Optional
 
@@ -48,16 +47,16 @@ def remove_approved_tests(
 @click.option("--verbose", default=False, is_flag=True)
 def polarion_approve_automate(config_file_path: str, project_id: str, branch: str, verbose: bool) -> None:
     if verbose:
-        LOGGER.setLevel(logging.INFO)
-    else:
-        logging.disable(logging.ERROR)
+        LOGGER.setLevel(logging.DEBUG)
+        logging.getLogger("apps.polarion.polarion_utils").setLevel(logging.DEBUG)
+
     polarion_project_id = project_id or get_polarion_project_id(
         config_file_path=config_file_path, util_name="pyutils-polarion-set-automated"
     )
     added_polarions = {}
     if added_ids := find_polarion_ids(polarion_project_id=polarion_project_id, string_to_match="added", branch=branch):
         added_polarions = approve_tests(polarion_project_id=polarion_project_id, added_ids=added_ids)
-        LOGGER.info(f"Following polarion ids were marked automated and approved: {added_polarions.get('updated')}")
+        LOGGER.debug(f"Following polarion ids were marked automated and approved: {added_polarions.get('updated')}")
 
     removed_polarions = remove_approved_tests(
         polarion_project_id=polarion_project_id, added_ids=added_ids, branch=branch
@@ -69,7 +68,7 @@ def polarion_approve_automate(config_file_path: str, project_id: str, branch: st
         if added_polarions.get("failed"):
             error += f" Added ids:: {added_polarions.get('failed')}."
         LOGGER.error(error)
-        raise PolarionTestCaseApprovalError(error)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
