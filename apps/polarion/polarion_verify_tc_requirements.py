@@ -22,6 +22,8 @@ LOGGER = get_logger(name="polarion-verify-tc-requirements")
 def has_verify(config_file_path: str, project_id: str, branch: str, verbose: bool) -> None:
     if verbose:
         LOGGER.setLevel(logging.DEBUG)
+        # since the utilities are in apps.polarion.polarion_utils, we need to change log level
+        # for apps.polarion.polarion_utils as well
         logging.getLogger("apps.polarion.polarion_utils").setLevel(logging.DEBUG)
 
     polarion_project_id = project_id or get_polarion_project_id(
