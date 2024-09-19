@@ -2,8 +2,8 @@ import logging
 from simple_logger.logger import get_logger
 import os
 import click
+import sys
 
-from apps.polarion.exceptions import PolarionTestCaseWithoutRequirementError
 from apps.polarion.polarion_utils import validate_polarion_requirements, find_polarion_ids, get_polarion_project_id
 
 LOGGER = get_logger(name="polarion-verify-tc-requirements")
@@ -21,21 +21,22 @@ LOGGER = get_logger(name="polarion-verify-tc-requirements")
 @click.option("--verbose", default=False, is_flag=True)
 def has_verify(config_file_path: str, project_id: str, branch: str, verbose: bool) -> None:
     if verbose:
-        LOGGER.setLevel(logging.INFO)
-    else:
-        logging.disable(logging.ERROR)
+        LOGGER.setLevel(logging.DEBUG)
+        # since the utilities are in apps.polarion.polarion_utils, we need to change log level
+        # for apps.polarion.polarion_utils as well
+        logging.getLogger("apps.polarion.polarion_utils").setLevel(logging.DEBUG)
+
     polarion_project_id = project_id or get_polarion_project_id(
         config_file_path=config_file_path, util_name="pyutils-polarion-verify-tc-requirements"
     )
     if added_ids := find_polarion_ids(polarion_project_id=polarion_project_id, string_to_match="added", branch=branch):
-        LOGGER.info(f"Checking following ids: {added_ids}")
+        LOGGER.debug(f"Checking following ids: {added_ids}")
         if tests_with_missing_requirements := validate_polarion_requirements(
             polarion_test_ids=added_ids,
             polarion_project_id=polarion_project_id,
         ):
-            raise PolarionTestCaseWithoutRequirementError(
-                f"TestCases with missing requirement: {tests_with_missing_requirements}"
-            )
+            LOGGER.error(f"TestCases with missing requirement: {tests_with_missing_requirements}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":

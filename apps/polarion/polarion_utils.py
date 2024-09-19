@@ -1,7 +1,6 @@
 from __future__ import annotations
 import re
-
-import click
+import sys
 from simple_logger.logger import get_logger
 import shlex
 import subprocess
@@ -23,7 +22,7 @@ def git_diff(branch: str) -> str:
 def git_diff_lines(branch: str) -> Dict[str, List[str]]:
     diff: Dict[str, List[str]] = {}
     for line in git_diff(branch=branch).splitlines():
-        LOGGER.info(line)
+        LOGGER.debug(line)
         if line.startswith("+"):
             diff.setdefault("added", []).append(line)
         if line.startswith("-"):
@@ -42,7 +41,7 @@ def validate_polarion_requirements(
 
         for _id in polarion_test_ids:
             has_req = False
-            LOGGER.info(f"Checking if {_id} verifies any requirement")
+            LOGGER.debug(f"Checking if {_id} verifies any requirement")
             tc = TestCase(project_id=polarion_project_id, work_item_id=_id)
             for link in tc.linked_work_items:
                 try:
@@ -70,7 +69,7 @@ def get_polarion_project_id(util_name: str, config_file_path: str) -> str:
     polarion_project_id = get_util_config(util_name=util_name, config_file_path=config_file_path).get("project_id")
     if not polarion_project_id:
         LOGGER.error("Polarion project id must be passed via config file or command line")
-        raise click.Abort()
+        sys.exit(1)
     return polarion_project_id
 
 
@@ -91,7 +90,7 @@ def update_polarion_ids(
                 if is_approved:
                     tc.status = APPROVED
                 tc.update()
-                LOGGER.info(f"Polarion {id}: marked as: {automation_status}, approved status set: {is_approved}")
+                LOGGER.debug(f"Polarion {id}: marked as: {automation_status}, approved status set: {is_approved}")
                 updated_ids.setdefault("updated", []).append(id)
             except PyleroLibException as polarion_exception:
                 error = f"{id}: {polarion_exception}"
