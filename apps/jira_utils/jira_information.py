@@ -32,6 +32,7 @@ def get_issue(
 def get_jira_ids_from_file_content(file_content: str, issue_pattern: str, jira_url: str) -> Set[str]:
     """
     Try to find all Jira tickets in a given file content.
+
     Looking for the following patterns:
     - jira_id=ABC-12345  # When jira id is present in a function call
     - <jira_url>/browse/ABC-12345  # when jira is in a link in comments
@@ -69,15 +70,16 @@ def get_jiras_from_python_files(issue_pattern: str, jira_url: str) -> Dict[str, 
     """
     jira_found: Dict[str, Set[str]] = {}
     for filename in all_python_files():
-        unique_jiras = set()
+        file_content = []
         with open(filename) as fd:
-            # if <skip-jira-utils-check> appears in a line, exclude that line from jira check
-            if unique_jiras := get_jira_ids_from_file_content(
-                file_content="\n".join([line for line in fd.readlines() if "<skip-jira-utils-check>" not in line]),
-                issue_pattern=issue_pattern,
-                jira_url=jira_url,
-            ):
-                jira_found[filename] = unique_jiras
+            file_content = fd.readlines()
+        # if <skip-jira-utils-check> appears in a line, exclude that line from jira check
+        if unique_jiras := get_jira_ids_from_file_content(
+            file_content="\n".join([line for line in file_content if "<skip-jira-utils-check>" not in line]),
+            issue_pattern=issue_pattern,
+            jira_url=jira_url,
+        ):
+            jira_found[filename] = unique_jiras
 
     if jira_found:
         _jira_found = "\n\t".join([f"{key}: {val}" for key, val in jira_found.items()])
@@ -141,7 +143,7 @@ def process_jira_command_line_config_file(
     url = url or config_dict.get("url", "")
     token = token or config_dict.get("token", "")
     if not (url and token):
-        LOGGER.error("Jira config file must contain valid url or token.")
+        LOGGER.error("Jira url and token are required.")
         sys.exit(1)
 
     return {
