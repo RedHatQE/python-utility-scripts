@@ -5,13 +5,13 @@ import yaml
 from simple_logger.logger import get_logger
 import json
 import click
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, Optional
 
 LOGGER = get_logger(name=__name__)
 
 
-def get_util_config(util_name: str, config_file_path: str) -> Dict[str, Any]:
-    if os.path.exists(config_file_path):
+def get_util_config(util_name: str, config_file_path: Optional[str] = None) -> Dict[str, Any]:
+    if config_file_path and os.path.exists(config_file_path):
         with open(config_file_path) as _file:
             return yaml.safe_load(_file).get(util_name, {})
     return {}
@@ -80,7 +80,6 @@ def all_python_files() -> Iterable[str]:
     for root, _, files in os.walk(os.path.abspath(os.curdir)):
         if [_dir for _dir in exclude_dirs if _dir in root]:
             continue
-
         for filename in files:
             if filename.endswith(".py"):
                 yield os.path.join(root, filename)
