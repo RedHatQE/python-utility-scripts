@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from pytest.mock import MagicMock, patch
 from apps.jira_utils.jira_information import get_jira_information, process_jira_command_line_config_file
 from simple_logger.logger import get_logger
 
