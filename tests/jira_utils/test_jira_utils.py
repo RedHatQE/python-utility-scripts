@@ -15,7 +15,7 @@ def test_process_jira_command_line_config_file_empty_config_token(mocker: Mocker
     version_string_not_targeted_jiras = "v1.*"
     target_versions = ["v2", "v3"]
     skip_projects = [1, 2]
-    mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+    mock_get_util_config = mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
     with pytest.raises(SystemExit) as pytest_wrapped_e:
         process_jira_command_line_config_file(
             config_file_path,
@@ -28,6 +28,7 @@ def test_process_jira_command_line_config_file_empty_config_token(mocker: Mocker
             skip_projects,
         )
     assert pytest_wrapped_e.value.code == 1
+    mock_get_util_config.assert_called_once()
 
 
 def test_process_jira_command_line_config_file_valid_config(mocker):
@@ -39,7 +40,7 @@ def test_process_jira_command_line_config_file_valid_config(mocker):
     version_string_not_targeted_jiras = "v1.*"
     target_versions = ["v2", "v3"]
     skip_projects = [1, 2]
-    mocker.patch(
+    mock_get_util_config = mocker.patch(
         "apps.jira_utils.jira_information.get_util_config",
         return_value={
             "url": url,
@@ -70,16 +71,22 @@ def test_process_jira_command_line_config_file_valid_config(mocker):
         "target_versions": target_versions,
         "skip_project_ids": skip_projects,
     }
+    mock_get_util_config.assert_called_once()
 
 
 @pytest.mark.parametrize(
     "jira_id, resolved_status, jira_target_versions, target_version_str, file_name, expected_jira_error_string, "
     "test_jira_version",
     [
+        # Test case 1: Issue with no jira target versions and not resolved status
         ("issue1", ["resolved"], [], "1.0", "file1.txt", "", "1.0"),
+        # Test case 2: Issue with no jira target versios, but resolved status
         ("issue2", ["open"], [], "1.0", "file2.txt", "issue2 current status: open is resolved.", "1.0"),
+        # Test case 3: Issue with no jira target versions, default resolved status
         ("issue3", [], [], "", "file3.txt", "", "1.1"),
+        # Test case 4: Issue with not resolved state, but matching jira target version
         ("issue4", ["resolved"], ["1.0"], "1.0", "file4.txt", "", "1.0"),
+        # Test case 5: Issue with not resolved state, and not matching jira target version
         (
             "issue5",
             ["resolved"],
@@ -122,7 +129,6 @@ def test_get_issue(
             jira_target_versions=jira_target_versions,
             file_name=file_name,
         )
-        assert result == (file_name, expected_jira_error_string)
     else:
         result = get_jira_information(
             jira_object=mock_jira,
@@ -133,4 +139,5 @@ def test_get_issue(
             jira_target_versions=jira_target_versions,
             file_name=file_name,
         )
+
     assert result == (file_name, expected_jira_error_string)
