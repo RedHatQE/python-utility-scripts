@@ -6,33 +6,26 @@ from apps.jira_utils.jira_information import (
     get_jira_ids_from_file_content,
 )
 from simple_logger.logger import get_logger
+from pyhelper_utils.shell import run_command
+import shlex
+import subprocess
+import os
 
 LOGGER = get_logger(name=__name__)
+BASE_COMMAND = "poetry run python apps/jira_utils/jira_information.py --verbose  "
 
 
 def test_process_jira_command_line_config_file_empty_config_token(mocker: MockerFixture) -> None:
-    config_file_path = None
-    url = "https://example.com"
-    token = ""
-    issue_pattern = "*"
-    resolved_statuses = ["RESOLVED"]
-    version_string_not_targeted_jiras = "v1.*"
-    target_versions = ["v2", "v3"]
-    skip_projects = [1, 2]
-    mock_get_util_config = mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
-    with pytest.raises(SystemExit) as pytest_wrapped_e:
-        process_jira_command_line_config_file(
-            config_file_path,
-            url,
-            token,
-            issue_pattern,
-            resolved_statuses,
-            version_string_not_targeted_jiras,
-            target_versions,
-            skip_projects,
-        )
-    assert pytest_wrapped_e.value.code == 1
-    mock_get_util_config.assert_called_once()
+    config_file = os.path.join(os.path.dirname(__file__), "test_jira_cfg_file.yaml")
+    rc, _, err = run_command(
+        command=shlex.split(f"{BASE_COMMAND} --config-file-path {config_file}"),
+        verify_stderr=False,
+        check=False,
+        capture_output=False,
+        stderr=subprocess.PIPE,
+    )
+    assert "Jira url and token are required." in err
+    assert not rc
 
 
 def test_process_jira_command_line_config_file_valid_config(mocker):
@@ -85,7 +78,7 @@ def test_process_jira_command_line_config_file_valid_config(mocker):
     [
         # Test case 1: Issue with no jira target versions and not resolved status
         ("issue1", ["resolved"], [], "1.0", "file1.txt", [], "", "1.0"),
-        # Test case 2: Issue with no jira target versios, but resolved status
+        # Test case 2: Issue with no jira target versions, but resolved status
         ("issue2", ["open"], [], "1.0", "file2.txt", [], "issue2 current status: open is resolved.", "1.0"),
         # Test case 3: Issue with no jira target versions, default resolved status
         ("issue3", [], [], "", "file3.txt", [], "", "1.1"),
@@ -106,6 +99,15 @@ def test_process_jira_command_line_config_file_valid_config(mocker):
         ("issue6", ["resolved"], ["1.0"], "1.0", "file6.txt", ["issue"], "", "1.1"),
         # Test case 7: Issue that would be skipped for version check but fail resolved check
         ("issue7", ["open"], ["1.0"], "1.0", "file6.txt", ["issue"], "issue7 current status: open is resolved.", "1.1"),
+    ],
+    ids=[
+        "test_no_jira_versions_no_resolved_status",
+        "test_no_jira_versions_resolved_status",
+        "test_no_jira_versions_default_resolved_status",
+        "test_matching_target_versions",
+        "test_no_target_versions_not_resolved_state",
+        "test_skip_version_check",
+        "test_skip_version_check_fail_status_check",
     ],
 )
 def test_get_jira_information(
