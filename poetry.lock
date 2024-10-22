@@ -919,12 +919,12 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyhelper-utils"
-version = "0.0.43"
+version = "0.0.44"
 description = "Collective utility functions for python projects"
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "pyhelper_utils-0.0.43.tar.gz", hash = "sha256:a90694f9f9df8bcd5369c53f222dfbcd1946650a5f1255a87184f3c03b4bca30"},
+    {file = "pyhelper_utils-0.0.44.tar.gz", hash = "sha256:de21bc9de7eea02bc4e1b85686e18eb49dde3d7f41b45f1cfc498df0e47abc17"},
 ]
 
 [package.dependencies]
@@ -1049,12 +1049,12 @@ six = "*"
 
 [[package]]
 name = "python-simple-logger"
-version = "1.0.41"
+version = "1.0.42"
 description = "A simple logger for python"
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "python_simple_logger-1.0.41.tar.gz", hash = "sha256:9890bf0698fc670eaff6430462ac1da16baad51f3139395e9c8056a2df1e7174"},
+    {file = "python_simple_logger-1.0.42.tar.gz", hash = "sha256:ad8ffd2019bcf824377d4ac2ac295b29210de0572ac85b45a8e250acf9ca0053"},
 ]
 
 [package.dependencies]
@@ -1318,4 +1318,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "c0ab8475fcb9ceb024721061a900977e6b350005a46332a437adaf6b91da3277"
+content-hash = "a3776093c526a5e2a2b29d4b075bdd34f56f12330b6e702df44c979d3b1d26ad"
