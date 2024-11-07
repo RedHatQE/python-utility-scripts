@@ -53,13 +53,13 @@ pyutils-jira = "apps.jira_utils.jira_information:get_jira_mismatch"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-python-simple-logger = "^1.0.8"
 pylero = "^0.1.0"
-pyhelper-utils = "^0.0.44"
 pytest-mock = "^3.14.0"
 pyyaml = "^6.0.1"
 jira = "^3.6.0"
 tenacity = "^9.0.0"
+python-simple-logger = "^2.0.0"
+pyhelper-utils = "^1.0.1"
 
 [tool.poetry.group.dev.dependencies]
 ipdb = "^0.13.13"
