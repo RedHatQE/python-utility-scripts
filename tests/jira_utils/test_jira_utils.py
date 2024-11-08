@@ -92,7 +92,7 @@ def test_process_jira_command_line_config_file_valid_config(mocker):
             "1.0",
             "file5.txt",
             [],
-            "issue5 target version: 1.0, does not match " "expected " "version ['1.1'].",
+            "issue5 target version: 1.0, does not match expected version ['1.1'].",
             "1.0",
         ),
         # Test case 6: Issue that would be skipped for version check because of skip
