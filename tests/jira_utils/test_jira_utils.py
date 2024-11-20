@@ -25,7 +25,7 @@ def test_process_jira_command_line_config_file_empty_config_token(mocker: Mocker
         stderr=subprocess.PIPE,
     )
     assert "Jira url and token are required." in err
-    assert not rc
+    assert rc != 0
 
 
 def test_process_jira_command_line_config_file_valid_config(mocker):
