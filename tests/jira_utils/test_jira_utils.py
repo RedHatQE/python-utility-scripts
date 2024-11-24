@@ -1,5 +1,4 @@
 import pytest
-from pytest_mock import MockerFixture
 from apps.jira_utils.jira_information import (
     get_jira_information,
     process_jira_command_line_config_file,
@@ -15,7 +14,7 @@ LOGGER = get_logger(name=__name__)
 BASE_COMMAND = "poetry run python apps/jira_utils/jira_information.py --verbose  "
 
 
-def test_process_jira_command_line_config_file_empty_config_token(mocker: MockerFixture) -> None:
+def test_process_jira_command_line_config_file_empty_config_token() -> None:
     config_file = os.path.join(os.path.dirname(__file__), "test_jira_cfg_file.yaml")
     rc, _, err = run_command(
         command=shlex.split(f"{BASE_COMMAND} --config-file-path {config_file}"),
