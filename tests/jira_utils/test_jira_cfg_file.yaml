@@ -1,0 +1,13 @@
+pyutils-jira:
+  url: "https://example.com"
+  token: ""
+  resolved_statuses:
+  - "RESOLVED"
+  issue_pattern: "*"
+  skip_project_ids:
+    - 1
+    - 2
+  jira_target_versions:
+    - "v2"
+    - "v3"
+  version_string_not_targeted_jiras: "v1.**"
