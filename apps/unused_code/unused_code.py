@@ -51,7 +51,7 @@ def is_ignore_function_list(ignore_prefix_list: List[str], function: ast.Functio
     return False
 
 
-def proccess_file(py_file: str, func_ignore_prefix: List[str], file_ignore_list: List[str]) -> str:
+def process_file(py_file: str, func_ignore_prefix: List[str], file_ignore_list: List[str]) -> str:
     if os.path.basename(py_file) in file_ignore_list:
         LOGGER.debug(f"Skipping file: {py_file}")
         return ""
@@ -69,7 +69,7 @@ def proccess_file(py_file: str, func_ignore_prefix: List[str], file_ignore_list:
             continue
 
         used = False
-        _func_grep_found = subprocess.check_output(f"git grep -w '{func.name}'", shell=True)
+        _func_grep_found = subprocess.check_output(["git", "grep", "-w", func.name], shell=False)
 
         for entry in _func_grep_found.decode().splitlines():
             _, _line = entry.split(":", 1)
@@ -124,7 +124,7 @@ def get_unused_functions(
         for py_file in all_python_files():
             jobs.append(
                 executor.submit(
-                    proccess_file,
+                    process_file,
                     py_file=py_file,
                     func_ignore_prefix=func_ignore_prefix,
                     file_ignore_list=file_ignore_list,
