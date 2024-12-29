@@ -147,5 +147,3 @@ def get_unused_functions(
 
 if __name__ == "__main__":
     get_unused_functions()
-
-    # get_unused_functions()
