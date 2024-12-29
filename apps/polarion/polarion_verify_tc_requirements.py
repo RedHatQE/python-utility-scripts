@@ -1,10 +1,11 @@
 import logging
-from simple_logger.logger import get_logger
 import os
-import click
 import sys
 
-from apps.polarion.polarion_utils import validate_polarion_requirements, find_polarion_ids, get_polarion_project_id
+import click
+from simple_logger.logger import get_logger
+
+from apps.polarion.polarion_utils import find_polarion_ids, get_polarion_project_id, validate_polarion_requirements
 
 LOGGER = get_logger(name="polarion-verify-tc-requirements")
 

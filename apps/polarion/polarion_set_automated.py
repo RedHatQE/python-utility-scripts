@@ -1,13 +1,14 @@
 from __future__ import annotations
+
 import logging
 import os
-from simple_logger.logger import get_logger
 import sys
+from typing import Dict, List, Optional
+
 import click
+from simple_logger.logger import get_logger
 
-from apps.polarion.polarion_utils import get_polarion_project_id, find_polarion_ids, update_polarion_ids
-from typing import List, Dict, Optional
-
+from apps.polarion.polarion_utils import find_polarion_ids, get_polarion_project_id, update_polarion_ids
 
 LOGGER = get_logger(name=__name__)
 

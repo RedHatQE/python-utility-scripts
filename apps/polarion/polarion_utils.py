@@ -1,12 +1,14 @@
 from __future__ import annotations
+
 import re
-import sys
-from simple_logger.logger import get_logger
 import shlex
 import subprocess
+import sys
+from typing import Dict, List
+
+from simple_logger.logger import get_logger
 
 from apps.utils import get_util_config
-from typing import Dict, List
 
 LOGGER = get_logger(name=__name__)
 AUTOMATED = "automated"
@@ -36,8 +38,8 @@ def validate_polarion_requirements(
 ) -> List[str]:
     tests_with_missing_requirements: List[str] = []
     if polarion_test_ids:
-        from pylero.work_item import TestCase, Requirement
         from pylero.exceptions import PyleroLibException
+        from pylero.work_item import Requirement, TestCase
 
         for _id in polarion_test_ids:
             has_req = False
@@ -80,8 +82,8 @@ def update_polarion_ids(
     if polarion_ids:
         automation_status = AUTOMATED if is_automated else NOT_AUTOMATED
 
-        from pylero.work_item import TestCase
         from pylero.exceptions import PyleroLibException
+        from pylero.work_item import TestCase
 
         for id in polarion_ids:
             try:

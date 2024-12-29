@@ -1,20 +1,17 @@
+import concurrent.futures
 import logging
+import os
 import re
 import sys
-import os
-import concurrent.futures
 from functools import lru_cache
+from typing import Any, Dict, List, Set, Tuple
 
 import click
-from jira import JIRA, JIRAError, Issue
-
+from jira import JIRA, Issue, JIRAError
 from simple_logger.logger import get_logger
-
-from apps.utils import ListParamType
-from typing import Dict, List, Set, Tuple, Any
-
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
-from apps.utils import all_python_files, get_util_config
+
+from apps.utils import ListParamType, all_python_files, get_util_config
 
 LOGGER = get_logger(name=__name__)
 
