@@ -66,7 +66,7 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
             continue
 
         if is_fixture_autouse(func=func):
-            LOGGER.debug(f"Skipping fixture function: {func.name}")
+            LOGGER.debug(f"Skipping `autouse` fixture function: {func.name}")
             continue
 
         used = False
