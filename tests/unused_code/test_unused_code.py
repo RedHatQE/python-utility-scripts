@@ -1,4 +1,5 @@
 from simple_logger.logger import get_logger
+
 from apps.unused_code.unused_code import get_unused_functions
 from tests.utils import get_cli_runner
 

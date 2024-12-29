@@ -1,14 +1,16 @@
-import pytest
-from apps.jira_utils.jira_information import (
-    get_jira_information,
-    process_jira_command_line_config_file,
-    get_jira_ids_from_file_content,
-)
-from simple_logger.logger import get_logger
-from pyhelper_utils.shell import run_command
+import os
 import shlex
 import subprocess
-import os
+
+import pytest
+from pyhelper_utils.shell import run_command
+from simple_logger.logger import get_logger
+
+from apps.jira_utils.jira_information import (
+    get_jira_ids_from_file_content,
+    get_jira_information,
+    process_jira_command_line_config_file,
+)
 
 LOGGER = get_logger(name=__name__)
 BASE_COMMAND = "poetry run python apps/jira_utils/jira_information.py --verbose  "

@@ -1,12 +1,13 @@
 from __future__ import annotations
+
 import re
-import sys
-from simple_logger.logger import get_logger
 import shlex
 import subprocess
+import sys
+
+from simple_logger.logger import get_logger
 
 from apps.utils import get_util_config
-from typing import Dict, List
 
 LOGGER = get_logger(name=__name__)
 AUTOMATED = "automated"
@@ -19,8 +20,8 @@ def git_diff(branch: str) -> str:
     return data.decode()
 
 
-def git_diff_lines(branch: str) -> Dict[str, List[str]]:
-    diff: Dict[str, List[str]] = {}
+def git_diff_lines(branch: str) -> dict[str, list[str]]:
+    diff: dict[str, list[str]] = {}
     for line in git_diff(branch=branch).splitlines():
         LOGGER.debug(line)
         if line.startswith("+"):
@@ -31,13 +32,13 @@ def git_diff_lines(branch: str) -> Dict[str, List[str]]:
 
 
 def validate_polarion_requirements(
-    polarion_test_ids: List[str],
+    polarion_test_ids: list[str],
     polarion_project_id: str,
-) -> List[str]:
-    tests_with_missing_requirements: List[str] = []
+) -> list[str]:
+    tests_with_missing_requirements: list[str] = []
     if polarion_test_ids:
-        from pylero.work_item import TestCase, Requirement
         from pylero.exceptions import PyleroLibException
+        from pylero.work_item import Requirement, TestCase
 
         for _id in polarion_test_ids:
             has_req = False
@@ -57,7 +58,7 @@ def validate_polarion_requirements(
     return tests_with_missing_requirements
 
 
-def find_polarion_ids(polarion_project_id: str, string_to_match: str, branch: str) -> List[str]:
+def find_polarion_ids(polarion_project_id: str, string_to_match: str, branch: str) -> list[str]:
     return re.findall(
         rf"pytest.mark.polarion.*({polarion_project_id}-[0-9]+)",
         "\n".join(git_diff_lines(branch=branch).get(string_to_match, [])),
@@ -74,14 +75,14 @@ def get_polarion_project_id(util_name: str, config_file_path: str) -> str:
 
 
 def update_polarion_ids(
-    project_id: str, is_automated: bool, polarion_ids: List[str], is_approved: bool = False
-) -> Dict[str, List[str]]:
-    updated_ids: Dict[str, List[str]] = {}
+    project_id: str, is_automated: bool, polarion_ids: list[str], is_approved: bool = False
+) -> dict[str, list[str]]:
+    updated_ids: dict[str, list[str]] = {}
     if polarion_ids:
         automation_status = AUTOMATED if is_automated else NOT_AUTOMATED
 
-        from pylero.work_item import TestCase
         from pylero.exceptions import PyleroLibException
+        from pylero.work_item import TestCase
 
         for id in polarion_ids:
             try:
