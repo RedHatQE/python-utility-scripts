@@ -1,5 +1,6 @@
 import shlex
 import subprocess
+
 from pyhelper_utils.shell import run_command
 
 BASE_COMMAND = "poetry run python apps/polarion/polarion_verify_tc_requirements.py"
