@@ -47,7 +47,6 @@ def is_ignore_function_list(ignore_prefix_list: list[str], function: ast.Functio
         function.name for ignore_prefix in ignore_prefix_list if function.name.startswith(ignore_prefix)
     ]
     if ignore_function_lists:
-        LOGGER.debug(f"Following functions are getting skipped: {ignore_function_lists}")
         return True
 
     return False
