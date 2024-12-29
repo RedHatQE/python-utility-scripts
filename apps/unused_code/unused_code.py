@@ -115,12 +115,15 @@ def get_unused_functions(
 ) -> None:
     LOGGER.setLevel(logging.DEBUG if verbose else logging.INFO)
 
-    _unused_functions = []
+    unused_functions: list[str] = []
     unused_code_config = get_util_config(util_name="pyutils-unusedcode", config_file_path=config_file_path)
     func_ignore_prefix = exclude_function_prefixes or unused_code_config.get("exclude_function_prefix", [])
     file_ignore_list = exclude_files or unused_code_config.get("exclude_files", [])
 
     jobs: list[Future] = []
+    if not os.path.exists(".git"):
+        LOGGER.error("Must be run from a git repository")
+        sys.exit(1)
 
     with ThreadPoolExecutor() as executor:
         for py_file in all_python_files():
@@ -134,11 +137,12 @@ def get_unused_functions(
             )
 
         for result in as_completed(jobs):
-            _unused_functions.append(result.result())
+            if unused_func := result.result():
+                unused_functions.append(unused_func)
 
-        if unused_functions := [_unused_func for _unused_func in _unused_functions if _unused_func]:
-            click.echo("\n".join(unused_functions))
-            sys.exit(1)
+    if unused_functions:
+        click.echo("\n".join(unused_functions))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
