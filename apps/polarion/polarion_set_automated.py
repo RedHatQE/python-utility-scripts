@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from typing import Dict, List, Optional
 
 import click
 from simple_logger.logger import get_logger
@@ -13,7 +12,7 @@ from apps.polarion.polarion_utils import find_polarion_ids, get_polarion_project
 LOGGER = get_logger(name=__name__)
 
 
-def approve_tests(polarion_project_id: str, added_ids: List[str]) -> Dict[str, List[str]]:
+def approve_tests(polarion_project_id: str, added_ids: list[str]) -> dict[str, list[str]]:
     LOGGER.debug(f"Following polarion ids were added: {added_ids}")
     return update_polarion_ids(
         polarion_ids=list(added_ids), project_id=polarion_project_id, is_automated=True, is_approved=True
@@ -21,8 +20,8 @@ def approve_tests(polarion_project_id: str, added_ids: List[str]) -> Dict[str, L
 
 
 def remove_approved_tests(
-    polarion_project_id: str, branch: str, added_ids: Optional[List[str]] = None
-) -> Dict[str, List[str]]:
+    polarion_project_id: str, branch: str, added_ids: list[str] | None = None
+) -> dict[str, list[str]]:
     removed_polarions = {}
     added_ids = added_ids or []
     if removed_ids := set(

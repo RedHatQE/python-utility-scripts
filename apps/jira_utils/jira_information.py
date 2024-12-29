@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import concurrent.futures
 import logging
 import os
 import re
 import sys
 from functools import lru_cache
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any
 
 import click
 from jira import JIRA, Issue, JIRAError
@@ -26,7 +28,7 @@ def get_issue(
     return jira.issue(id=jira_id, fields="status, issuetype, fixVersions")
 
 
-def get_jira_ids_from_file_content(file_content: str, issue_pattern: str, jira_url: str) -> Set[str]:
+def get_jira_ids_from_file_content(file_content: str, issue_pattern: str, jira_url: str) -> set[str]:
     """
     Try to find all Jira tickets in a given file content.
 
@@ -52,7 +54,7 @@ def get_jira_ids_from_file_content(file_content: str, issue_pattern: str, jira_u
     return set(_pytest_jira_marker_bugs + _jira_id_arguments + _jira_url_jiras)
 
 
-def get_jiras_from_python_files(issue_pattern: str, jira_url: str) -> Dict[str, Set[str]]:
+def get_jiras_from_python_files(issue_pattern: str, jira_url: str) -> dict[str, set[str]]:
     """
     Get all python files from the current directory and get list of jira ids from each of them
 
@@ -65,7 +67,7 @@ def get_jiras_from_python_files(issue_pattern: str, jira_url: str) -> Dict[str, 
 
     Note: any line containing <skip-jira_utils-check> would be not be checked for presence of a jira id
     """
-    jira_found: Dict[str, Set[str]] = {}
+    jira_found: dict[str, set[str]] = {}
     for filename in all_python_files():
         file_content = []
         with open(filename) as fd:
@@ -88,12 +90,12 @@ def get_jiras_from_python_files(issue_pattern: str, jira_url: str) -> Dict[str, 
 def get_jira_information(
     jira_object: JIRA,
     jira_id: str,
-    skip_project_ids: List[str],
-    resolved_status: List[str],
-    jira_target_versions: List[str],
+    skip_project_ids: list[str],
+    resolved_status: list[str],
+    jira_target_versions: list[str],
     target_version_str: str,
     file_name: str,
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     jira_error_string = ""
     try:
         # check resolved status:
@@ -130,11 +132,11 @@ def process_jira_command_line_config_file(
     url: str,
     token: str,
     issue_pattern: str,
-    resolved_statuses: List[str],
+    resolved_statuses: list[str],
     version_string_not_targeted_jiras: str,
-    target_versions: List[str],
-    skip_projects: List[str],
-) -> Dict[str, Any]:
+    target_versions: list[str],
+    skip_projects: list[str],
+) -> dict[str, Any]:
     # Process all the arguments passed from command line or config file or environment variable
     config_dict = get_util_config(util_name="pyutils-jira", config_file_path=config_file_path)
     url = url or config_dict.get("url", "")
@@ -198,11 +200,11 @@ def process_jira_command_line_config_file(
 @click.option("--verbose", default=False, is_flag=True)
 def get_jira_mismatch(
     config_file_path: str,
-    target_versions: List[str],
+    target_versions: list[str],
     url: str,
     token: str,
-    skip_projects: List[str],
-    resolved_statuses: List[str],
+    skip_projects: list[str],
+    resolved_statuses: list[str],
     issue_pattern: str,
     version_string_not_targeted_jiras: str,
     verbose: bool,
@@ -225,7 +227,7 @@ def get_jira_mismatch(
     )
 
     jira_obj = JIRA(token_auth=jira_config_dict["token"], options={"server": jira_config_dict["url"]})
-    jira_error: Dict[str, str] = {}
+    jira_error: dict[str, str] = {}
 
     if jira_id_dict := get_jiras_from_python_files(
         issue_pattern=jira_config_dict["issue_pattern"], jira_url=jira_config_dict["url"]

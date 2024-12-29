@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import ast
 import logging
 import os
 import subprocess
 import sys
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from typing import Any, Iterable, List
+from typing import Any, Iterable
 
 import click
 from simple_logger.logger import get_logger
@@ -15,7 +17,7 @@ LOGGER = get_logger(name=__name__)
 
 
 def is_fixture_autouse(func: ast.FunctionDef) -> bool:
-    deco_list: List[Any] = func.decorator_list
+    deco_list: list[Any] = func.decorator_list
     for deco in deco_list or []:
         if not hasattr(deco, "func"):
             continue
@@ -40,7 +42,7 @@ def _iter_functions(tree: ast.Module) -> Iterable[ast.FunctionDef]:
             yield elm
 
 
-def is_ignore_function_list(ignore_prefix_list: List[str], function: ast.FunctionDef) -> bool:
+def is_ignore_function_list(ignore_prefix_list: list[str], function: ast.FunctionDef) -> bool:
     ignore_function_lists = [
         function.name for ignore_prefix in ignore_prefix_list if function.name.startswith(ignore_prefix)
     ]
@@ -51,7 +53,7 @@ def is_ignore_function_list(ignore_prefix_list: List[str], function: ast.Functio
     return False
 
 
-def process_file(py_file: str, func_ignore_prefix: List[str], file_ignore_list: List[str]) -> str:
+def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: list[str]) -> str:
     if os.path.basename(py_file) in file_ignore_list:
         LOGGER.debug(f"Skipping file: {py_file}")
         return ""
