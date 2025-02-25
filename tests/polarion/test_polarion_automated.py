@@ -14,5 +14,5 @@ def test_missing_project_id_set_automated():
         capture_output=False,
         stderr=subprocess.PIPE,
     )
-    assert "Polarion project id must be passed via config file or command line" in err
+    assert "Previous and current commit" in err
     assert not rc

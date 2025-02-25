@@ -15,14 +15,20 @@ NOT_AUTOMATED = "notautomated"
 APPROVED = "approved"
 
 
-def git_diff(branch: str) -> str:
-    data = subprocess.check_output(shlex.split(f"git diff {branch} HEAD"))
+def git_diff(branch: str | None = None, current_commit: str | None = None, previous_commit: str | None = None) -> str:
+    if branch and (previous_commit or current_commit):
+        LOGGER.error("Branch and Previous or current commit are mutually exclusive command line options.")
+        sys.exit(1)
+    diff_command = f"git diff {branch} HEAD" if branch else f"git diff {previous_commit} {current_commit}"
+    data = subprocess.check_output(shlex.split(diff_command))
     return data.decode()
 
 
-def git_diff_lines(branch: str) -> dict[str, list[str]]:
+def git_diff_lines(
+    branch: str | None = None, previous_commit: str | None = None, current_commit: str | None = None
+) -> dict[str, list[str]]:
     diff: dict[str, list[str]] = {}
-    for line in git_diff(branch=branch).splitlines():
+    for line in git_diff(branch=branch, current_commit=current_commit, previous_commit=previous_commit).splitlines():
         LOGGER.debug(line)
         if line.startswith("+"):
             diff.setdefault("added", []).append(line)
@@ -58,10 +64,20 @@ def validate_polarion_requirements(
     return tests_with_missing_requirements
 
 
-def find_polarion_ids(polarion_project_id: str, string_to_match: str, branch: str) -> list[str]:
+def find_polarion_ids(
+    polarion_project_id: str,
+    string_to_match: str,
+    branch: str | None = None,
+    previous_commit: str | None = None,
+    current_commit: str | None = None,
+) -> list[str]:
     return re.findall(
         rf"pytest.mark.polarion.*({polarion_project_id}-[0-9]+)",
-        "\n".join(git_diff_lines(branch=branch).get(string_to_match, [])),
+        "\n".join(
+            git_diff_lines(branch=branch, previous_commit=previous_commit, current_commit=current_commit).get(
+                string_to_match, []
+            )
+        ),
         re.MULTILINE | re.IGNORECASE,
     )
 
