@@ -49,7 +49,12 @@ def validate_polarion_requirements(
         for _id in polarion_test_ids:
             has_req = False
             LOGGER.debug(f"Checking if {_id} verifies any requirement")
-            tc = TestCase(project_id=polarion_project_id, work_item_id=_id)
+            try:
+                tc = TestCase(project_id=polarion_project_id, work_item_id=_id)
+            except PyleroLibException:
+                LOGGER.error(f"{_id}: Test case not found.")
+                tests_with_missing_requirements.append(_id)
+                continue
             for link in tc.linked_work_items:
                 try:
                     Requirement(project_id=polarion_project_id, work_item_id=link.work_item_id)
@@ -59,7 +64,7 @@ def validate_polarion_requirements(
                     continue
 
             if not has_req:
-                LOGGER.error(f"{_id}: Is missing requirement")
+                LOGGER.error(f"{_id}: does not have associated requirement.")
                 tests_with_missing_requirements.append(_id)
     return tests_with_missing_requirements
 
