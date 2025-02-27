@@ -19,7 +19,15 @@ def git_diff(branch: str | None = None, current_commit: str | None = None, previ
     if branch and (previous_commit or current_commit):
         LOGGER.error("Branch and Previous or current commit are mutually exclusive command line options.")
         sys.exit(1)
-    diff_command = f"git diff {branch} HEAD" if branch else f"git diff {previous_commit} {current_commit}"
+
+    # Sanitize inputs to prevent command injection
+    if branch:
+        sanitized_branch = shlex.quote(branch)
+        diff_command = f"git diff {sanitized_branch} HEAD"
+    else:
+        sanitized_previous = shlex.quote(previous_commit) if previous_commit else ""
+        sanitized_current = shlex.quote(current_commit) if current_commit else ""
+        diff_command = f"git diff {sanitized_previous} {sanitized_current}"
     data = subprocess.check_output(shlex.split(diff_command))
     return data.decode()
 
