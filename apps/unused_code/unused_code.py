@@ -5,7 +5,9 @@ import logging
 import os
 import subprocess
 import sys
+import tokenize
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from io import StringIO
 from typing import Any, Iterable
 
 import click
@@ -14,6 +16,52 @@ from simple_logger.logger import get_logger
 from apps.utils import ListParamType, all_python_files, get_util_config
 
 LOGGER = get_logger(name=__name__)
+SKIP_COMMENT = "# skip-unused-code"
+
+
+def extract_function_comments(source_code: str) -> dict[str, list[str]]:
+    """
+    Finds the comments preceding function definitions, which can be used to skip single functions with a specific comment,
+    i.e. `# skip-unused-code`
+    """
+    # Create an AST from the source code
+    tree = ast.parse(source_code)
+
+    # Initialize a dictionary to hold comments for each function
+    function_comments: dict[str, list[str]] = {}
+
+    # Tokenize the source code to find comments
+    tokens = tokenize.generate_tokens(StringIO(source_code).readline)
+
+    # To store the comments for each function
+    function_comments = {}
+    current_function = None
+    comments: list[str] = []
+    function_start_line = None
+
+    # Process the tokens and extract comments
+    for token in tokens:
+        if token.type == tokenize.COMMENT:
+            # Associate the comment with the current function, if any
+            if current_function is not None:
+                comments.append(token.string)
+
+        # Detect the start of a new function definition
+        elif token.type == tokenize.NAME and token.string == "def":
+            # Record the function's starting line
+            function_start_line = token.start[0]
+
+        elif token.type == tokenize.NAME and token.string != "def":
+            if function_start_line is not None:
+                # Find the function name in the AST node
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.FunctionDef) and node.lineno == function_start_line:
+                        current_function = node.name
+                        function_comments[current_function] = comments
+                        function_start_line = None
+                        comments = []
+
+    return function_comments
 
 
 def is_fixture_autouse(func: ast.FunctionDef) -> bool:
@@ -53,14 +101,21 @@ def is_ignore_function_list(ignore_prefix_list: list[str], function: ast.Functio
 
 
 def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: list[str]) -> str:
-    if os.path.basename(py_file) in file_ignore_list:
+    if os.path.relpath(py_file) in file_ignore_list:
         LOGGER.debug(f"Skipping file: {py_file}")
         return ""
 
     with open(py_file) as fd:
         tree = ast.parse(source=fd.read())
 
+    with open(py_file) as fd:
+        comments = extract_function_comments(source_code=fd.read())
+
     for func in _iter_functions(tree=tree):
+        if SKIP_COMMENT in comments[func.name]:
+            LOGGER.debug(f"Skipping function: {func.name} due to comment")
+            continue
+
         if func_ignore_prefix and is_ignore_function_list(ignore_prefix_list=func_ignore_prefix, function=func):
             LOGGER.debug(f"Skipping function: {func.name}")
             continue
