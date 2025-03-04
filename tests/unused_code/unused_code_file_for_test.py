@@ -13,7 +13,11 @@ def foo():  # skip-unused-code
     pass
 
 
-def bar(x: Any, y: Any, z: Any) -> None:  # skip-unused-code
+def bar(
+    x: Any,
+    y: Any,
+    z: Any
+) -> None:  # skip-unused-code
     pass
 
 
