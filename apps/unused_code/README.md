@@ -49,7 +49,7 @@ def tmp2(
   x,
   y,
   z
-):  # skip-unused code
+):  # skip-unused-code
 ```
 Running this tool would exclude both functions `tmp1` and `tmp2`
 ```bash

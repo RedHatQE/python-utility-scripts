@@ -22,7 +22,7 @@ def bar(
 
 
 def check_me():
-    # skip-unused code
+    # skip-unused-code
     pass
 
 
