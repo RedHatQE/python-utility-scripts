@@ -5,7 +5,9 @@ import logging
 import os
 import subprocess
 import sys
+import tokenize
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from io import StringIO
 from typing import Any, Iterable
 
 import click
@@ -14,6 +16,60 @@ from simple_logger.logger import get_logger
 from apps.utils import ListParamType, all_python_files, get_util_config
 
 LOGGER = get_logger(name=__name__)
+SKIP_COMMENT = "# skip-unused-code"
+
+
+def extract_inline_function_comments(source_code: str) -> dict[str, list[str]]:
+    """
+    Finds *only* inline comments for function definition that match `SKIP_COMMENT` and returns them
+    """
+    # Tokenize the source code to find comments
+    tokens = tokenize.generate_tokens(StringIO(source_code).readline)
+
+    # To store the comments for each function
+    prev_token = None
+    comments = {}
+    def_tok = False
+
+    # Process the tokens and extract comments
+    for token in tokens:
+        tok_type, tok_string, _, _, _ = token
+
+        # Detect the start of a new function definition
+        if tok_type == tokenize.NAME and tok_string == "def":
+            def_tok = True
+
+        elif tok_type == tokenize.NAME and def_tok:
+            # First "NAME" token after a "def" will be the function name
+            prev_token = token
+            def_tok = False
+
+        elif tok_type == tokenize.NEWLINE and prev_token:
+            # we found a function name and this is the first logical newline after it
+            # if no comment has been found it means that anything that comes after could be within the function
+            # or outside of it, which is outside the scope of what we are looking for. we can empty prev_token.
+            # note that tokenize.NL would be a different (non-logical) newline, e.g. a multi-line function def
+            # which is thus still handled correctly.
+            # Not handling this here can cause comments outside the scope of the function to be mishandled, e.g.
+            # ------------
+            # def foo():
+            #      pass
+            #
+            # # my-comment
+            # def bar():
+            # ------------
+            # would return "# my-comment" as a foo() comment
+            prev_token = None
+
+        # If this is the comment we look for, and it comes after a function definition
+        elif tok_type == tokenize.COMMENT and prev_token and tok_string == SKIP_COMMENT:
+            LOGGER.debug(f"found comment for function def: {prev_token.line.strip()}")
+            LOGGER.debug(f"comment is: {tok_string}")
+            func_name = prev_token.string
+            comments[func_name] = [tok_string]
+            prev_token = None
+
+    return comments
 
 
 def is_fixture_autouse(func: ast.FunctionDef) -> bool:
@@ -53,14 +109,22 @@ def is_ignore_function_list(ignore_prefix_list: list[str], function: ast.Functio
 
 
 def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: list[str]) -> str:
-    if os.path.basename(py_file) in file_ignore_list:
+    if os.path.relpath(py_file) in file_ignore_list:
         LOGGER.debug(f"Skipping file: {py_file}")
         return ""
 
     with open(py_file) as fd:
         tree = ast.parse(source=fd.read())
 
+    with open(py_file) as fd:
+        comments = extract_inline_function_comments(source_code=fd.read())
+
+    found = []
     for func in _iter_functions(tree=tree):
+        if func.name in comments.keys():
+            LOGGER.debug(f"Skipping function due to comment: {func.name}")
+            continue
+
         if func_ignore_prefix and is_ignore_function_list(ignore_prefix_list=func_ignore_prefix, function=func):
             LOGGER.debug(f"Skipping function: {func.name}")
             continue
@@ -81,12 +145,23 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
             if _line.strip().startswith("#"):
                 continue
 
+            if _line.strip().startswith("assert"):
+                # if the function is only called from a test assert statement do not count it
+                continue
+
             if func.name in _line:
                 used = True
                 break
 
         if not used:
-            return f"{os.path.relpath(py_file)}:{func.name}:{func.lineno}:{func.col_offset} Is not used anywhere in the code."
+            # store all unused functions in the file
+            found.append(
+                f"{os.path.relpath(py_file)}:{func.name}:{func.lineno}:{func.col_offset} Is not used anywhere in the code.\n"
+            )
+
+    # return all unused functions if any
+    if len(found) > 0:
+        return "".join(found)
 
     return ""
 

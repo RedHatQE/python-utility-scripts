@@ -26,7 +26,7 @@ output-format = "grouped"
 lint.extend-select = ["I"]
 
 [tool.ruff.format]
-exclude = [".git", ".venv", ".mypy_cache", ".tox", "__pycache__"]
+exclude = [".git", ".venv", ".mypy_cache", ".tox", "__pycache__", "unused_code_file_for_test.py"]
 
 [tool.poetry]
 name = "python-utility-scripts"

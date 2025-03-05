@@ -14,17 +14,30 @@ def test_unused_code():
 
 
 def test_unused_code_file_list():
-    result = get_cli_runner().invoke(get_unused_functions, '--exclude-files "unused_code_file_for_test.py"')
+    result = get_cli_runner().invoke(
+        get_unused_functions, '--exclude-files "tests/unused_code/unused_code_file_for_test.py"'
+    )
     LOGGER.info(f"Result output: {result.output}, exit code: {result.exit_code}, exceptions: {result.exception}")
     assert result.exit_code == 0
     assert "Is not used anywhere in the code" not in result.output
+
+
+def test_unused_code_wrong_file_list():
+    result = get_cli_runner().invoke(get_unused_functions, '--exclude-files "unused_code_file_for_test.py"')
+    LOGGER.info(f"Result output: {result.output}, exit code: {result.exit_code}, exceptions: {result.exception}")
+    assert result.exit_code == 1
+    assert "Is not used anywhere in the code" in result.output
 
 
 def test_unused_code_function_list_exclude_all():
     result = get_cli_runner().invoke(get_unused_functions, '--exclude-function-prefixes "unused_code_"')
     LOGGER.info(f"Result output: {result.output}, exit code: {result.exit_code}, exceptions: {result.exception}")
-    assert result.exit_code == 0
-    assert "Is not used anywhere in the code" not in result.output
+    # No function def that starts with "unused_code_"
+    assert ":unused_code_" not in result.output
+    assert "check_me" in result.output
+    assert "check_me_too" in result.output
+    assert "foo" not in result.output
+    assert "bar" not in result.output
 
 
 def test_unused_code_function_list_exclude():
@@ -32,3 +45,17 @@ def test_unused_code_function_list_exclude():
     LOGGER.info(f"Result output: {result.output}, exit code: {result.exit_code}, exceptions: {result.exception}")
     assert result.exit_code == 1
     assert "Is not used anywhere in the code" in result.output
+    assert "unused_code_check_fail" in result.output
+    assert "unused_code_check_file" in result.output
+
+
+def test_skip_comment():
+    result = get_cli_runner().invoke(get_unused_functions)
+    LOGGER.info(f"Result output: {result.output}, exit code: {result.exit_code}, exceptions: {result.exception}")
+    assert result.exit_code == 1
+    assert "unused_code_check_fail" in result.output
+    assert "unused_code_check_file" in result.output
+    assert "check_me" in result.output
+    assert "check_me_too" in result.output
+    assert "foo" not in result.output
+    assert "bar" not in result.output
