@@ -15,14 +15,28 @@ NOT_AUTOMATED = "notautomated"
 APPROVED = "approved"
 
 
-def git_diff(branch: str) -> str:
-    data = subprocess.check_output(shlex.split(f"git diff {branch} HEAD"))
+def git_diff(branch: str | None = None, current_commit: str | None = None, previous_commit: str | None = None) -> str:
+    if branch and (previous_commit or current_commit):
+        LOGGER.error("Branch and Previous or current commit are mutually exclusive command line options.")
+        sys.exit(1)
+
+    # Sanitize inputs to prevent command injection
+    if branch:
+        sanitized_branch = shlex.quote(branch)
+        diff_command = f"git diff {sanitized_branch} HEAD"
+    else:
+        sanitized_previous = shlex.quote(previous_commit) if previous_commit else ""
+        sanitized_current = shlex.quote(current_commit) if current_commit else ""
+        diff_command = f"git diff {sanitized_previous} {sanitized_current}"
+    data = subprocess.check_output(shlex.split(diff_command))
     return data.decode()
 
 
-def git_diff_lines(branch: str) -> dict[str, list[str]]:
+def git_diff_lines(
+    branch: str | None = None, previous_commit: str | None = None, current_commit: str | None = None
+) -> dict[str, list[str]]:
     diff: dict[str, list[str]] = {}
-    for line in git_diff(branch=branch).splitlines():
+    for line in git_diff(branch=branch, current_commit=current_commit, previous_commit=previous_commit).splitlines():
         LOGGER.debug(line)
         if line.startswith("+"):
             diff.setdefault("added", []).append(line)
@@ -43,7 +57,12 @@ def validate_polarion_requirements(
         for _id in polarion_test_ids:
             has_req = False
             LOGGER.debug(f"Checking if {_id} verifies any requirement")
-            tc = TestCase(project_id=polarion_project_id, work_item_id=_id)
+            try:
+                tc = TestCase(project_id=polarion_project_id, work_item_id=_id)
+            except PyleroLibException:
+                LOGGER.error(f"{_id}: Test case not found.")
+                tests_with_missing_requirements.append(_id)
+                continue
             for link in tc.linked_work_items:
                 try:
                     Requirement(project_id=polarion_project_id, work_item_id=link.work_item_id)
@@ -53,15 +72,25 @@ def validate_polarion_requirements(
                     continue
 
             if not has_req:
-                LOGGER.error(f"{_id}: Is missing requirement")
+                LOGGER.error(f"{_id}: does not have associated requirement.")
                 tests_with_missing_requirements.append(_id)
     return tests_with_missing_requirements
 
 
-def find_polarion_ids(polarion_project_id: str, string_to_match: str, branch: str) -> list[str]:
+def find_polarion_ids(
+    polarion_project_id: str,
+    string_to_match: str,
+    branch: str | None = None,
+    previous_commit: str | None = None,
+    current_commit: str | None = None,
+) -> list[str]:
     return re.findall(
         rf"pytest.mark.polarion.*({polarion_project_id}-[0-9]+)",
-        "\n".join(git_diff_lines(branch=branch).get(string_to_match, [])),
+        "\n".join(
+            git_diff_lines(branch=branch, previous_commit=previous_commit, current_commit=current_commit).get(
+                string_to_match, []
+            )
+        ),
         re.MULTILINE | re.IGNORECASE,
     )
 
