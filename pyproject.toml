@@ -1,13 +1,59 @@
+[project]
+name = "python-utility-scripts"
+version = "3.11.11"
+description = "Python utility scripts"
+authors = [{ name = "dbasunag", email = "dbasunag@redhat.com" }]
+requires-python = "~=3.9"
+readme = "README.md"
+license = "Apache-2.0"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "pylero>=0.1.0,<0.2",
+  "pytest-mock>=3.14.0,<4",
+  "pyyaml>=6.0.1,<7",
+  "jira>=3.6.0,<4",
+  "tenacity>=9.0.0,<10",
+  "python-simple-logger>=2.0.0,<3",
+  "pyhelper-utils>=1.0.1,<2",
+]
+
+[project.urls]
+Homepage = "https://github.com/RedHatQE/python-utility-scripts"
+Repository = "https://github.com/RedHatQE/python-utility-scripts"
+Documentation = "https://github.com/RedHatQE/python-utility-scripts/blob/main/README.md"
+
+[project.scripts]
+pyutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
+pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
+pyutils-polarion-set-automated = "apps.polarion.polarion_set_automated:polarion_approve_automate"
+pyutils-jira = "apps.jira_utils.jira_information:get_jira_mismatch"
+
 [tool.coverage.run]
 omit = ["tests/*"]
+
+[dependency-groups]
+dev = ["ipdb>=0.13.13,<0.14", "ipython"]
+test = ["pytest>=8.0.0,<9", "pytest-cov>=6.0.0,<7"]
 
 [tool.coverage.report]
 fail_under = 65
 skip_empty = true
 
+[tool.uv]
+default-groups = ["dev", "test"]
+
 [tool.coverage.html]
 directory = ".tests_coverage"
 show_contexts = true
+
+[tool.hatch.build.targets.sdist]
+include = ["apps"]
+
+[tool.hatch.build.targets.wheel]
+include = ["apps"]
 
 [tool.mypy]
 show_error_codes = true
@@ -28,57 +74,6 @@ lint.extend-select = ["I"]
 [tool.ruff.format]
 exclude = [".git", ".venv", ".mypy_cache", ".tox", "__pycache__"]
 
-[tool.poetry]
-name = "python-utility-scripts"
-version = "0.0.0"
-description = "Python utility scripts"
-authors = ["dbasunag <dbasunag@redhat.com>"]
-license = "Apache License 2.0"
-readme = "README.md"
-repository = "https://github.com/RedHatQE/python-utility-scripts"
-homepage = "https://github.com/RedHatQE/python-utility-scripts"
-documentation = "https://github.com/RedHatQE/python-utility-scripts/blob/main/README.md"
-classifiers = [
-  "Programming Language :: Python :: 3",
-  "Operating System :: OS Independent",
-]
-
-packages = [{ include = "apps" }]
-
-[tool.poetry.scripts]
-pyutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
-pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
-pyutils-polarion-set-automated = "apps.polarion.polarion_set_automated:polarion_approve_automate"
-pyutils-jira = "apps.jira_utils.jira_information:get_jira_mismatch"
-
-
-[tool.poetry.dependencies]
-python = "^3.9"
-pylero = "^0.1.0"
-pytest-mock = "^3.14.0"
-pyyaml = "^6.0.1"
-jira = "^3.6.0"
-tenacity = "^9.0.0"
-python-simple-logger = "^2.0.0"
-pyhelper-utils = "^1.0.1"
-
-[tool.poetry.group.dev.dependencies]
-ipdb = "^0.13.13"
-ipython = "*"
-
-
-[tool.poetry-dynamic-versioning]
-enable = true
-pattern = "((?P<epoch>\\d+)!)?(?P<base>\\d+(\\.\\d+)*)"
-
-
-[tool.poetry.group.test.dependencies]
-pytest = "^8.0.0"
-pytest-cov = "^6.0.0"
-
-[tool.poetry-dynamic-versioning.substitution]
-files = ["VERSION"]
-
 [build-system]
-requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning"]
-build-backend = "poetry_dynamic_versioning.backend"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
