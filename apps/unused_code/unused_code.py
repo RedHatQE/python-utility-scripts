@@ -9,6 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from typing import Any, Iterable
 
 import click
+from ast_comments import parse
 from simple_logger.logger import get_logger
 
 from apps.utils import ListParamType, all_python_files, get_util_config
@@ -58,7 +59,7 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
         return ""
 
     with open(py_file) as fd:
-        tree = ast.parse(source=fd.read())
+        tree = parse(source=fd.read())
 
     for func in _iter_functions(tree=tree):
         if func_ignore_prefix and is_ignore_function_list(ignore_prefix_list=func_ignore_prefix, function=func):
@@ -69,8 +70,12 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
             LOGGER.debug(f"Skipping `autouse` fixture function: {func.name}")
             continue
 
+        if any(getattr(item, "value", None) == "# skip-unused-code" for item in func.body):
+            LOGGER.debug(f"Skipping function {func.name}: found `# skip-unused-code`")
+            continue
+
         used = False
-        _func_grep_found = subprocess.check_output(["git", "grep", "-w", func.name], shell=False)
+        _func_grep_found = subprocess.check_output(["git", "grep", "-wE", f"{func.name}(.*)"], shell=False)
 
         for entry in _func_grep_found.decode().splitlines():
             _, _line = entry.split(":", 1)

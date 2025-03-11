@@ -32,3 +32,10 @@ def test_unused_code_function_list_exclude():
     LOGGER.info(f"Result output: {result.output}, exit code: {result.exit_code}, exceptions: {result.exception}")
     assert result.exit_code == 1
     assert "Is not used anywhere in the code" in result.output
+
+
+def test_unused_code_check_skip_with_comment():
+    result = get_cli_runner().invoke(get_unused_functions, '--exclude-function-prefixes "unused_code_"')
+    LOGGER.info(f"Result output: {result.output}, exit code: {result.exit_code}, exceptions: {result.exception}")
+    assert result.exit_code == 0
+    assert "Is not used anywhere in the code" not in result.output

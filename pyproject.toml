@@ -61,6 +61,7 @@ jira = "^3.6.0"
 tenacity = "^9.0.0"
 python-simple-logger = "^2.0.0"
 pyhelper-utils = "^1.0.1"
+ast-comments = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]
 ipdb = "^0.13.13"
