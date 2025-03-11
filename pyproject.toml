@@ -1,14 +1,13 @@
 [project]
 name = "python-utility-scripts"
-version = "3.11.11"
+version = "1.0.16"
 description = "Python utility scripts"
-authors = [{ name = "dbasunag", email = "dbasunag@redhat.com" }]
 requires-python = "~=3.9"
 readme = "README.md"
 license = "Apache-2.0"
 classifiers = [
   "Programming Language :: Python :: 3",
-  "Operating System :: OS Independent",
+  "Operating System :: OS Independent"
 ]
 dependencies = [
   "pylero>=0.1.0,<0.2",
@@ -17,43 +16,43 @@ dependencies = [
   "jira>=3.6.0,<4",
   "tenacity>=9.0.0,<10",
   "python-simple-logger>=2.0.0,<3",
-  "pyhelper-utils>=1.0.1,<2",
+  "pyhelper-utils>=1.0.1,<2"
 ]
 
-[project.urls]
-Homepage = "https://github.com/RedHatQE/python-utility-scripts"
-Repository = "https://github.com/RedHatQE/python-utility-scripts"
-Documentation = "https://github.com/RedHatQE/python-utility-scripts/blob/main/README.md"
+  [[project.authors]]
+  name = "dbasunag"
+  email = "dbasunag@redhat.com"
 
-[project.scripts]
-pyutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
-pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
-pyutils-polarion-set-automated = "apps.polarion.polarion_set_automated:polarion_approve_automate"
-pyutils-jira = "apps.jira_utils.jira_information:get_jira_mismatch"
+  [project.urls]
+  Homepage = "https://github.com/RedHatQE/python-utility-scripts"
+  Repository = "https://github.com/RedHatQE/python-utility-scripts"
+  Documentation = "https://github.com/RedHatQE/python-utility-scripts/blob/main/README.md"
+
+  [project.scripts]
+  pyutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
+  pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
+  pyutils-polarion-set-automated = "apps.polarion.polarion_set_automated:polarion_approve_automate"
+  pyutils-jira = "apps.jira_utils.jira_information:get_jira_mismatch"
 
 [tool.coverage.run]
-omit = ["tests/*"]
-
-[dependency-groups]
-dev = ["ipdb>=0.13.13,<0.14", "ipython"]
-test = ["pytest>=8.0.0,<9", "pytest-cov>=6.0.0,<7"]
+omit = [ "tests/*" ]
 
 [tool.coverage.report]
 fail_under = 65
 skip_empty = true
 
-[tool.uv]
-default-groups = ["dev", "test"]
-
 [tool.coverage.html]
 directory = ".tests_coverage"
 show_contexts = true
 
+[tool.uv]
+default-groups = [ "dev", "test" ]
+
 [tool.hatch.build.targets.sdist]
-include = ["apps"]
+include = [ "apps" ]
 
 [tool.hatch.build.targets.wheel]
-include = ["apps"]
+include = [ "apps" ]
 
 [tool.mypy]
 show_error_codes = true
@@ -69,11 +68,17 @@ preview = true
 line-length = 120
 fix = true
 output-format = "grouped"
-lint.extend-select = ["I"]
 
-[tool.ruff.format]
-exclude = [".git", ".venv", ".mypy_cache", ".tox", "__pycache__"]
+  [tool.ruff.lint]
+  extend-select = [ "I" ]
+
+  [tool.ruff.format]
+  exclude = [ ".git", ".venv", ".mypy_cache", ".tox", "__pycache__" ]
+
+[dependency-groups]
+dev = [ "ipdb>=0.13.13,<0.14", "ipython" ]
+test = [ "pytest>=8.0.0,<9", "pytest-cov>=6.0.0,<7" ]
 
 [build-system]
-requires = ["hatchling"]
+requires = [ "hatchling" ]
 build-backend = "hatchling.build"
