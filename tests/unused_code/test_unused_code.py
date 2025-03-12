@@ -35,7 +35,7 @@ def test_unused_code_function_list_exclude():
 
 
 def test_unused_code_check_skip_with_comment():
-    result = get_cli_runner().invoke(get_unused_functions, '--exclude-function-prefixes "unused_code_"')
+    result = get_cli_runner().invoke(get_unused_functions)
     LOGGER.info(f"Result output: {result.output}, exit code: {result.exit_code}, exceptions: {result.exception}")
-    assert result.exit_code == 0
-    assert "Is not used anywhere in the code" not in result.output
+    assert result.exit_code == 1
+    assert "skip_with_comment" not in result.output

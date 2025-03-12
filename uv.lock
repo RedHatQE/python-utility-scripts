@@ -7,6 +7,15 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "ast-comments"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8b/85/e2bea931f371bde73c5e6f450c51f173ee451cb68978372f7b222f803133/ast_comments-1.2.2.tar.gz", hash = "sha256:04f86e0a8010569ea279d470b4dcb86f0913a8a39bd80e0fe358e11aa5bfa8d6", size = 5345 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/85/ab/e7f191cd70fe861367a55449381832d6703b475ab320a9d96f3d61ea672b/ast_comments-1.2.2-py3-none-any.whl", hash = "sha256:6468c6b91d971b3fca2e3cd6f7a6d52e7385b6e4d25809444372960c74a8cbc2", size = 5801 },
+]
+
+[[package]]
 name = "asttokens"
 version = "2.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -832,6 +841,7 @@ name = "python-utility-scripts"
 version = "1.0.16"
 source = { editable = "." }
 dependencies = [
+    { name = "ast-comments" },
     { name = "jira" },
     { name = "pyhelper-utils" },
     { name = "pylero" },
@@ -853,6 +863,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ast-comments", specifier = ">=1.2.2" },
     { name = "jira", specifier = ">=3.6.0,<4" },
     { name = "pyhelper-utils", specifier = ">=1.0.1,<2" },
     { name = "pylero", specifier = ">=0.1.0,<0.2" },
