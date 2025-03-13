@@ -1,6 +1,6 @@
 [project]
 name = "python-utility-scripts"
-version = "1.0.16"
+version = "1.0.17"
 description = "Python utility scripts"
 requires-python = "~=3.9"
 readme = "README.md"
@@ -17,7 +17,7 @@ dependencies = [
   "tenacity>=9.0.0,<10",
   "python-simple-logger>=2.0.0,<3",
   "pyhelper-utils>=1.0.1,<2",
-  "ast-comments>=1.2.2",
+  "ast-comments>=1.2.2"
 ]
 
   [[project.authors]]
