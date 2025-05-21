@@ -34,7 +34,7 @@ pyutils-jira:
   target_versions:
   - 1.0.0
   - 2.0.1
-  - 3.0.z  # This would match 3.0.0, 3.0.1, 3.0.2, etc.
+  - 3.0.z
   issue_pattern: "([A-Z]+-[0-9]+)"
   version_string_not_targeted_jiras: "vfuture"
 ```
