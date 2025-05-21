@@ -13,7 +13,7 @@ from apps.jira_utils.jira_information import (
 )
 
 LOGGER = get_logger(name=__name__)
-BASE_COMMAND = "poetry run python apps/jira_utils/jira_information.py --verbose  "
+BASE_COMMAND = "uv run apps/jira_utils/jira_information.py --verbose  "
 
 
 def test_process_jira_command_line_config_file_empty_config_token() -> None:
@@ -80,7 +80,16 @@ def test_process_jira_command_line_config_file_valid_config(mocker):
         # Test case 1: Issue with no jira target versions and not resolved status
         ("issue1", ["resolved"], [], "1.0", "file1.txt", [], "", "1.0"),
         # Test case 2: Issue with no jira target versions, but resolved status
-        ("issue2", ["open"], [], "1.0", "file2.txt", [], "issue2 current status: open is resolved.", "1.0"),
+        (
+            "issue2",
+            ["open"],
+            [],
+            "1.0",
+            "file2.txt",
+            [],
+            "issue2 current status: open is resolved.",
+            "1.0",
+        ),
         # Test case 3: Issue with no jira target versions, default resolved status
         ("issue3", [], [], "", "file3.txt", [], "", "1.1"),
         # Test case 4: Issue with not resolved state, but matching jira target version
@@ -99,7 +108,29 @@ def test_process_jira_command_line_config_file_valid_config(mocker):
         # Test case 6: Issue that would be skipped for version check because of skip
         ("issue6", ["resolved"], ["1.0"], "1.0", "file6.txt", ["issue"], "", "1.1"),
         # Test case 7: Issue that would be skipped for version check but fail resolved check
-        ("issue7", ["open"], ["1.0"], "1.0", "file6.txt", ["issue"], "issue7 current status: open is resolved.", "1.1"),
+        (
+            "issue7",
+            ["open"],
+            ["1.0"],
+            "1.0",
+            "file6.txt",
+            ["issue"],
+            "issue7 current status: open is resolved.",
+            "1.1",
+        ),
+        # Test case 8: Issue with unresolved state, and matching jira z target version
+        ("issue8", [], ["1.2.z"], "1.2,z", "file4.txt", [], "", "1.2.z"),
+        # Test case 9: Issue with unresolved state, and jira z target version not matching expected versions
+        (
+            "issue8",
+            [],
+            ["1.2.3"],
+            "",
+            "file4.txt",
+            [],
+            "issue8 target version: 1.2.z, does not match expected version ['1.2.3'].",
+            "1.2.z",
+        ),
     ],
     ids=[
         "test_no_jira_versions_no_resolved_status",
@@ -109,6 +140,8 @@ def test_process_jira_command_line_config_file_valid_config(mocker):
         "test_no_target_versions_not_resolved_state",
         "test_skip_version_check",
         "test_skip_version_check_fail_status_check",
+        "test_matching_target_z_version",
+        "test_non_matching_target_z_version",
     ],
 )
 def test_get_jira_information(
@@ -131,8 +164,8 @@ def test_get_jira_information(
 
     if jira_target_versions:
         mocker.patch(
-            "apps.jira_utils.jira_information.re.search",
-            return_value=mocker.MagicMock(group=lambda x: test_jira_version),
+            "apps.jira_utils.jira_information.re.findall",
+            return_value=[test_jira_version],
         )
         result = get_jira_information(
             jira_object=mock_jira,
@@ -160,10 +193,20 @@ def test_get_jira_information(
 @pytest.mark.parametrize(
     "content_and_expected",
     [
-        pytest.param({"content": "pytest.mark.jira(ABC-1111)", "expected": {"ABC-1111"}}, id="pytest_mark_jira"),
-        pytest.param({"content": "JIRA ID is jira_id=ABC-1111", "expected": {"ABC-1111"}}, id="jira_id="),
         pytest.param(
-            {"content": "JIRA URL is https://example.com/browse/ABC-1111", "expected": {"ABC-1111"}}, id="jira_url="
+            {"content": "pytest.mark.jira(ABC-1111)", "expected": {"ABC-1111"}},
+            id="pytest_mark_jira",
+        ),
+        pytest.param(
+            {"content": "JIRA ID is jira_id=ABC-1111", "expected": {"ABC-1111"}},
+            id="jira_id=",
+        ),
+        pytest.param(
+            {
+                "content": "JIRA URL is https://example.com/browse/ABC-1111",
+                "expected": {"ABC-1111"},
+            },
+            id="jira_url=",
         ),
         pytest.param(
             {
@@ -184,6 +227,8 @@ def test_get_jira_information(
 )
 def test_get_jira_ids_from_file_content(content_and_expected):
     jira_ids = get_jira_ids_from_file_content(
-        file_content=content_and_expected["content"], issue_pattern=r"([A-Z]+-[0-9]+)", jira_url="https://example.com"
+        file_content=content_and_expected["content"],
+        issue_pattern=r"([A-Z]+-[0-9]+)",
+        jira_url="https://example.com",
     )
     assert jira_ids == content_and_expected["expected"]

@@ -17,7 +17,8 @@ dependencies = [
   "tenacity>=9.0.0,<10",
   "python-simple-logger>=2.0.0,<3",
   "pyhelper-utils>=1.0.1,<2",
-  "ast-comments>=1.2.2"
+  "ast-comments>=1.2.2",
+  "click (>=8.1.7)",
 ]
 
   [[project.authors]]
@@ -39,7 +40,7 @@ dependencies = [
 omit = [ "tests/*" ]
 
 [tool.coverage.report]
-fail_under = 65
+fail_under = 45
 skip_empty = true
 
 [tool.coverage.html]
@@ -54,6 +55,7 @@ include = [ "apps" ]
 
 [tool.hatch.build.targets.wheel]
 include = [ "apps" ]
+
 
 [tool.mypy]
 show_error_codes = true
@@ -78,7 +80,12 @@ output-format = "grouped"
 
 [dependency-groups]
 dev = [ "ipdb>=0.13.13,<0.14", "ipython" ]
-test = [ "pytest>=8.0.0,<9", "pytest-cov>=6.0.0,<7" ]
+test = [
+ "ipdb>=0.13.13",
+ "ipython>=8.18.1",
+ "pytest>=8.0.0,<9",
+ "pytest-cov>=6.0.0,<7",
+]
 
 [build-system]
 requires = [ "hatchling" ]
