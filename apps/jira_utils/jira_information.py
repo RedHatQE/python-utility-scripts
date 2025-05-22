@@ -18,7 +18,11 @@ from apps.utils import ListParamType, all_python_files, get_util_config
 LOGGER = get_logger(name=__name__)
 
 
-@retry(retry=retry_if_exception_type(JIRAError), stop=stop_after_attempt(3), wait=wait_fixed(2))
+@retry(
+    retry=retry_if_exception_type(JIRAError),
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(2),
+)
 @lru_cache
 def get_issue(
     jira: JIRA,
@@ -97,6 +101,8 @@ def get_jira_information(
     file_name: str,
 ) -> tuple[str, str]:
     jira_error_string = ""
+    re_compile = r"(?<![\d.])\d+\.\d+(?:\.(?:\d+|z))?\b"
+
     try:
         # check resolved status:
         jira_issue_metadata = get_issue(jira=jira_object, jira_id=jira_id).fields
@@ -105,17 +111,20 @@ def get_jira_information(
         if current_jira_status in resolved_status:
             jira_error_string += f"{jira_id} current status: {current_jira_status} is resolved."
 
-        # validate correct target version if provided:
+        # validate a correct target version if provided:
         if jira_target_versions:
             if skip_project_ids and jira_id.startswith(tuple(skip_project_ids)):
                 return file_name, jira_error_string
 
-            fix_version = (
-                re.search(r"([\d.]+)", jira_issue_metadata.fixVersions[0].name)
-                if (jira_issue_metadata.fixVersions)
-                else None
-            )
-            current_target_version = fix_version.group(1) if fix_version else target_version_str
+            # If a bug has a fix version, extract it using regex
+            if (jira_fix_versions := jira_issue_metadata.fixVersions) and (
+                found_version := re.findall(re_compile, jira_fix_versions[0].name)
+            ):
+                current_target_version = found_version[0]
+
+            else:
+                current_target_version = target_version_str
+
             if not any([current_target_version == version for version in jira_target_versions]):
                 jira_error_string += (
                     f"{jira_id} target version: {current_target_version}, does not match expected "
@@ -174,8 +183,18 @@ def process_jira_command_line_config_file(
     help="Provide comma separated list of Jira Project keys, against which version check should be skipped.",
     type=ListParamType(),
 )
-@click.option("--url", help="Provide the Jira server URL", type=click.STRING, default=os.getenv("JIRA_SERVER_URL"))
-@click.option("--token", help="Provide the Jira token.", type=click.STRING, default=os.getenv("JIRA_TOKEN"))
+@click.option(
+    "--url",
+    help="Provide the Jira server URL",
+    type=click.STRING,
+    default=os.getenv("JIRA_SERVER_URL"),
+)
+@click.option(
+    "--token",
+    help="Provide the Jira token.",
+    type=click.STRING,
+    default=os.getenv("JIRA_TOKEN"),
+)
 @click.option(
     "--issue-pattern",
     help="Provide the regex for Jira ids",
@@ -226,11 +245,15 @@ def get_jira_mismatch(
         target_versions=target_versions,
     )
 
-    jira_obj = JIRA(token_auth=jira_config_dict["token"], options={"server": jira_config_dict["url"]})
+    jira_obj = JIRA(
+        token_auth=jira_config_dict["token"],
+        options={"server": jira_config_dict["url"]},
+    )
     jira_error: dict[str, str] = {}
 
     if jira_id_dict := get_jiras_from_python_files(
-        issue_pattern=jira_config_dict["issue_pattern"], jira_url=jira_config_dict["url"]
+        issue_pattern=jira_config_dict["issue_pattern"],
+        jira_url=jira_config_dict["url"],
     ):
         with concurrent.futures.ThreadPoolExecutor() as executor:
             for file_name, ids in jira_id_dict.items():
