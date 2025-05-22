@@ -40,7 +40,7 @@ dependencies = [
 omit = [ "tests/*" ]
 
 [tool.coverage.report]
-fail_under = 65
+fail_under = 68
 skip_empty = true
 
 [tool.coverage.html]
