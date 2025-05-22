@@ -3,7 +3,7 @@ import subprocess
 
 from pyhelper_utils.shell import run_command
 
-BASE_COMMAND = "poetry run python apps/polarion/polarion_set_automated.py --verbose"
+BASE_COMMAND = "uv run python apps/polarion/polarion_set_automated.py --verbose"
 
 
 def test_missing_required_params_set_automated():
