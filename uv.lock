@@ -842,6 +842,7 @@ version = "1.0.20"
 source = { editable = "." }
 dependencies = [
     { name = "ast-comments" },
+    { name = "click" },
     { name = "jira" },
     { name = "pyhelper-utils" },
     { name = "pylero" },
@@ -857,6 +858,8 @@ dev = [
     { name = "ipython" },
 ]
 test = [
+    { name = "ipdb" },
+    { name = "ipython" },
     { name = "pytest" },
     { name = "pytest-cov" },
 ]
@@ -864,6 +867,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "ast-comments", specifier = ">=1.2.2" },
+    { name = "click", specifier = ">=8.1.7" },
     { name = "jira", specifier = ">=3.6.0,<4" },
     { name = "pyhelper-utils", specifier = ">=1.0.1,<2" },
     { name = "pylero", specifier = ">=0.1.0,<0.2" },
@@ -879,6 +883,8 @@ dev = [
     { name = "ipython" },
 ]
 test = [
+    { name = "ipdb", specifier = ">=0.13.13" },
+    { name = "ipython", specifier = ">=8.18.1" },
     { name = "pytest", specifier = ">=8.0.0,<9" },
     { name = "pytest-cov", specifier = ">=6.0.0,<7" },
 ]

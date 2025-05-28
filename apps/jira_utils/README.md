@@ -15,7 +15,8 @@ pyutils-jira --help
 ```
 
 ## Config file
-A config file with the jira connection parameters like url, token, resolved_statuses, skip_project_ids, target_versions should be passed to command line option `--cfg-file`
+A config file with the jira connection parameters like url, token, resolved_statuses, skip_project_ids,  
+target_versions should be passed to command line option `--cfg-file`
 
 ### Example:
 
@@ -33,6 +34,7 @@ pyutils-jira:
   target_versions:
   - 1.0.0
   - 2.0.1
+  - 3.0.z
   issue_pattern: "([A-Z]+-[0-9]+)"
   version_string_not_targeted_jiras: "vfuture"
 ```
