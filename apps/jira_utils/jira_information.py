@@ -101,7 +101,7 @@ def get_jira_information(
     file_name: str,
 ) -> tuple[str, str]:
     jira_error_string = ""
-    re_compile = r"(?<![\d.])\d+\.\d+(?:\.(?:\d+|z))?\b"
+    re_compile = rf"(?<![\d.])\d+\.\d+(?:\.(?:\d+|z))?|{target_version_str}\b"
 
     try:
         # check resolved status:
@@ -116,20 +116,21 @@ def get_jira_information(
             if skip_project_ids and jira_id.startswith(tuple(skip_project_ids)):
                 return file_name, jira_error_string
 
-            # If a bug has a fix version, extract it using regex
-            if (jira_fix_versions := jira_issue_metadata.fixVersions) and (
-                found_version := re.findall(re_compile, jira_fix_versions[0].name)
-            ):
-                current_target_version = found_version[0]
+            current_target_versions = [target_version_str]
+            # If a bug has fix version(s), extract using regex
+            if jira_fix_versions := jira_issue_metadata.fixVersions:
+                jira_fix_versions = ",".join([jira_fix_version.name for jira_fix_version in jira_fix_versions])
+                current_target_versions = re.findall(re_compile, jira_fix_versions)
+
+            if any([version in jira_target_versions for version in current_target_versions]):
+                return file_name, jira_error_string
 
             else:
-                current_target_version = target_version_str
-
-            if not any([current_target_version == version for version in jira_target_versions]):
                 jira_error_string += (
-                    f"{jira_id} target version: {current_target_version}, does not match expected "
+                    f"{jira_id} target versions: {current_target_versions}, do not match expected "
                     f"version {jira_target_versions}."
                 )
+
     except JIRAError as exp:
         jira_error_string += f"{jira_id} JiraError status code: {exp.status_code}, details: {exp.text}]."
 
