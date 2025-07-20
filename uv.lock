@@ -981,7 +981,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/82/05/b94f4e454c842521f
 
 [[package]]
 name = "python-utility-scripts"
-version = "1.0.23"
+version = "1.0.24"
 source = { editable = "." }
 dependencies = [
     { name = "ast-comments" },
