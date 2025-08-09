@@ -40,23 +40,32 @@ def is_pytest_fixture(func: ast.FunctionDef) -> bool:
     for decorator in decorators or []:
         # Case 1: @pytest.fixture(...)
         if hasattr(decorator, "func"):
+            # e.g. @pytest.fixture(...)
             if getattr(decorator.func, "attr", None) and getattr(decorator.func, "value", None):
                 if decorator.func.attr == "fixture" and getattr(decorator.func.value, "id", None) == "pytest":
                     return True
+            # e.g. from pytest import fixture; @fixture(...)
+            if isinstance(decorator.func, ast.Name) and decorator.func.id == "fixture":
+                return True
         # Case 2: @pytest.fixture (no parentheses)
         else:
+            # e.g. @pytest.fixture
             if getattr(decorator, "attr", None) == "fixture" and getattr(decorator, "value", None):
                 if getattr(decorator.value, "id", None) == "pytest":
                     return True
+            # e.g. from pytest import fixture; @fixture
+            if isinstance(decorator, ast.Name) and decorator.id == "fixture":
+                return True
     return False
 
 
 def _git_grep(pattern: str) -> list[str]:
     """Run git grep with a pattern and return matching lines.
 
+    - Uses PCRE (``-P``) so that patterns like ``\b`` work as word boundaries.
     - Includes untracked files so local changes are considered.
-    - Treats exit code 1 (no matches) as an empty result.
-    - Any other non-zero exit code is logged at debug level and treated as empty.
+    - Return an empty list when no matches are found (rc=1).
+    - Raise on other non-zero exit codes.
     """
     cmd = [
         "git",
@@ -64,18 +73,16 @@ def _git_grep(pattern: str) -> list[str]:
         "-n",  # include line numbers
         "--no-color",
         "--untracked",
-        "-wE",
+        "-P",  # PCRE for proper \b (word boundary) handling
         pattern,
     ]
     result = subprocess.run(cmd, check=False, capture_output=True, text=True)
     if result.returncode == 0:
         return [line for line in result.stdout.splitlines() if line]
+    # rc=1 means no matches were found
     if result.returncode == 1:
-        # no matches
-        LOGGER.debug(f"git grep returned no matches for pattern: {pattern}")
         return []
 
-    # Unexpected error: propagate to caller so the CLI can exit with a non-zero code cleanly
     error_message = result.stderr.strip() or "Unknown git grep error"
     raise RuntimeError(f"git grep failed (rc={result.returncode}) for pattern {pattern!r}: {error_message}")
 
