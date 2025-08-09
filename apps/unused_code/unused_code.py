@@ -136,7 +136,9 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
 
         # First, look for call sites: function_name(...)
         for entry in _git_grep(pattern=f"{func.name}(.*)"):
-            _, _line = entry.split(":", 1)
+            # git grep -n output format: path:line-number:line-content
+            # Split into exactly three parts to safely handle colons within the line content
+            _path, _lineno, _line = entry.split(":", 2)
 
             # ignore its own definition
             if f"def {func.name}" in _line:
@@ -154,7 +156,9 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
         if not used and is_pytest_fixture(func=func):
             param_pattern = rf"def\s+\w+\s*\([^)]*\b{func.name}\b"
             for entry in _git_grep(pattern=param_pattern):
-                _, _line = entry.split(":", 1)
+                # git grep -n output format: path:line-number:line-content
+                # Split into exactly three parts to safely handle colons within the line content
+                _path, _lineno, _line = entry.split(":", 2)
 
                 # ignore commented lines
                 if _line.strip().startswith("#"):
