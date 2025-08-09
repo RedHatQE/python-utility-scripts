@@ -6,7 +6,8 @@ import os
 import subprocess
 import sys
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from typing import Any, Iterable, Optional
+from functools import lru_cache
+from typing import Any, Iterable
 
 import click
 from ast_comments import parse
@@ -17,23 +18,19 @@ from apps.utils import ListParamType, all_python_files, get_util_config
 LOGGER = get_logger(name=__name__)
 
 
-_GREP_FLAG: Optional[str] = None
-
-
+@lru_cache(maxsize=1)
 def _detect_supported_grep_flag() -> str:
     """Detect and cache a supported regex engine flag for git grep.
 
     Prefer PCRE ("-P") for proper \b handling; fall back to basic regex ("-G").
     Run a harmless grep to verify support and cache the first working flag.
+    Uses lru_cache for thread-safe caching that runs only once per process.
     """
-    global _GREP_FLAG
-    if _GREP_FLAG:
-        return _GREP_FLAG
-
     candidate_flags = ["-P", "-G"]
     for flag in candidate_flags:
         try:
             # Use a trivial pattern to minimize output. We only care that the flag is accepted.
+            # Discard stdout/stderr to prevent capturing large data in big repositories.
             probe_cmd = [
                 "git",
                 "grep",
@@ -44,10 +41,9 @@ def _detect_supported_grep_flag() -> str:
                 flag,
                 "^$",  # match empty lines; success (rc=0) or no matches (rc=1) are both fine
             ]
-            result = subprocess.run(probe_cmd, check=False, capture_output=True, text=True)
+            result = subprocess.run(probe_cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if result.returncode in (0, 1):
-                _GREP_FLAG = flag
-                return _GREP_FLAG
+                return flag
         except Exception:
             # Try next candidate
             pass
@@ -104,14 +100,14 @@ def _build_call_pattern(function_name: str) -> str:
     r"""Build a portable regex to match function call sites.
 
     Uses word boundary semantics based on the detected grep engine.
-    - PCRE (-P):    \bname[(]
-    - Basic (-G):   \<name[(]
+    - PCRE (-P):    \bname\s*[(]
+    - Basic (-G):   \<name\s*[(]
     """
     flag = _detect_supported_grep_flag()
     if flag == "-P":
-        return rf"\b{function_name}[(]"
+        return rf"\b{function_name}\s*[(]"
     # -G basic regex: use word-start token \< and literal '('
-    return rf"\<{function_name}[(]"
+    return rf"\<{function_name}\s*[(]"
 
 
 def _build_fixture_param_pattern(function_name: str) -> str:
@@ -120,14 +116,14 @@ def _build_fixture_param_pattern(function_name: str) -> str:
     if flag == "-P":
         return rf"def\s+\w+\s*[(][^)]*\b{function_name}\b"
     # For -G (basic regex), avoid PCRE tokens; use POSIX classes and literals
-    # def[space][ident][ident*][space*]([^)]*\<name\>)
-    return rf"def[[:space:]][[:alnum:]_][[:alnum:]_]*[[:space:]]*[(][^)]*\<{function_name}\>"
+    # def[space+][ident][ident*][space*]([^)]*\<name\>)
+    return rf"def[[:space:]]+[[:alnum:]_][[:alnum:]_]*[[:space:]]*[(][^)]*\<{function_name}\>"
 
 
 def _git_grep(pattern: str) -> list[str]:
     """Run git grep with a pattern and return matching lines.
 
-    - Uses PCRE (``-P``) so that patterns like ``\b`` work as word boundaries.
+    - Uses dynamically detected regex engine (prefers PCRE ``-P``, falls back to basic ``-G``).
     - Includes untracked files so local changes are considered.
     - Return an empty list when no matches are found (rc=1).
     - Raise on other non-zero exit codes.
@@ -140,6 +136,7 @@ def _git_grep(pattern: str) -> list[str]:
         "--untracked",
         "-I",  # ignore binary files
         _detect_supported_grep_flag(),
+        "-e",  # safely handle patterns starting with dash
         pattern,
     ]
     result = subprocess.run(cmd, check=False, capture_output=True, text=True)
@@ -203,8 +200,11 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
         # First, look for call sites: function_name(...)
         for entry in _git_grep(pattern=_build_call_pattern(function_name=func.name)):
             # git grep -n output format: path:line-number:line-content
-            # Split into exactly three parts to safely handle colons within the line content
-            _path, _lineno, _line = entry.split(":", 2)
+            # Use rsplit to handle Windows drive letters and paths with colons
+            parts = entry.rsplit(":", 2)
+            if len(parts) != 3:
+                continue
+            _path, _lineno, _line = parts
 
             # ignore its own definition
             if f"def {func.name}" in _line:
@@ -223,8 +223,11 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
             param_pattern = _build_fixture_param_pattern(function_name=func.name)
             for entry in _git_grep(pattern=param_pattern):
                 # git grep -n output format: path:line-number:line-content
-                # Split into exactly three parts to safely handle colons within the line content
-                _path, _lineno, _line = entry.split(":", 2)
+                # Use rsplit to handle Windows drive letters and paths with colons
+                parts = entry.rsplit(":", 2)
+                if len(parts) != 3:
+                    continue
+                _path, _lineno, _line = parts
 
                 # ignore commented lines
                 if _line.strip().startswith("#"):
@@ -274,6 +277,14 @@ def get_unused_functions(
         LOGGER.error("Must be run from a git repository")
         sys.exit(1)
 
+    # Pre-flight grep flag detection to fail fast with clear error if unsupported
+    try:
+        detected_flag = _detect_supported_grep_flag()
+        LOGGER.debug(f"Using git grep flag: {detected_flag}")
+    except RuntimeError as e:
+        LOGGER.error(str(e))
+        sys.exit(1)
+
     with ThreadPoolExecutor() as executor:
         for py_file in all_python_files():
             future = executor.submit(
@@ -298,7 +309,9 @@ def get_unused_functions(
             sys.exit(2)
 
     if unused_functions:
-        click.echo("\n".join(unused_functions))
+        # Sort output for deterministic CI logs
+        sorted_output = sorted(unused_functions)
+        click.echo("\n".join(sorted_output))
         sys.exit(1)
 
 

@@ -148,3 +148,61 @@ def only_here():
     # Should still be reported as unused because usage is commented out
     result = process_file(py_file=str(py_file), func_ignore_prefix=[], file_ignore_list=[])
     assert "Is not used anywhere in the code." in result
+
+
+def test_git_grep_parsing_handles_windows_paths_with_colons(mocker, tmp_path):
+    # Create a temporary python file with a simple function
+    py_file = tmp_path / "tmp_windows_path.py"
+    py_file.write_text(
+        textwrap.dedent(
+            """
+def my_function():
+    return 42
+"""
+        )
+    )
+
+    # Simulate git grep output with Windows-style paths containing drive letters and colons
+    # Format: path:line-number:line-content
+    # Windows paths like C:\path\to\file.py:123:content would break with split(":", 2)
+    # but should work correctly with rsplit(":", 2)
+    mocker.patch(
+        "apps.unused_code.unused_code._git_grep",
+        return_value=[
+            "C:\\Users\\test\\project\\file.py:25:result = my_function()",
+            "/some/unix/path/with:colon/file.py:30:my_function() # usage found",
+            "D:\\Another\\Windows\\Path\\test.py:15:    my_function()  # another usage",
+        ],
+    )
+
+    # Should detect the function as used (not report as unused)
+    result = process_file(py_file=str(py_file), func_ignore_prefix=[], file_ignore_list=[])
+    assert result == ""  # Empty string means function is used, not unused
+
+
+def test_git_grep_parsing_handles_malformed_output_gracefully(mocker, tmp_path):
+    # Create a temporary python file with a simple function
+    py_file = tmp_path / "tmp_malformed.py"
+    py_file.write_text(
+        textwrap.dedent(
+            """
+def my_function():
+    return 42
+"""
+        )
+    )
+
+    # Simulate git grep output with malformed entries (missing parts)
+    # The parsing should skip malformed entries and continue processing
+    mocker.patch(
+        "apps.unused_code.unused_code._git_grep",
+        return_value=[
+            "malformed_line_without_colons",  # Should be skipped
+            "only:one:colon",  # Should be skipped (only 2 parts after rsplit)
+            "C:\\valid\\path\\file.py:25:result = my_function()",  # Valid - should be processed
+        ],
+    )
+
+    # Should detect the function as used despite malformed entries
+    result = process_file(py_file=str(py_file), func_ignore_prefix=[], file_ignore_list=[])
+    assert result == ""  # Empty string means function is used, not unused
