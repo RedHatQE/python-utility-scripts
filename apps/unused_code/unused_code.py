@@ -284,13 +284,18 @@ def get_unused_functions(
             )
             jobs[future] = py_file
 
+        processing_errors: list[str] = []
         for future in as_completed(jobs):
             try:
                 if unused_func := future.result():
                     unused_functions.append(unused_func)
             except Exception as exc:
-                LOGGER.error(f"Failed to process file {jobs[future]}: {exc}")
-                sys.exit(2)
+                processing_errors.append(f"{jobs[future]}: {exc}")
+
+        if processing_errors:
+            joined = "\n".join(processing_errors)
+            LOGGER.error(f"One or more files failed to process:\n{joined}")
+            sys.exit(2)
 
     if unused_functions:
         click.echo("\n".join(unused_functions))

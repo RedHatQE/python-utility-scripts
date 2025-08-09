@@ -64,10 +64,11 @@ def test_something(sample_fixture):
 
     # Mock grep to simulate: no direct call matches, but parameter usage is detected
     def _mock_grep(pattern: str):
-        if pattern.endswith("(.*)"):
+        # Our call-site pattern now ends with '['(']'
+        if pattern.endswith("[(]"):
             return []  # simulate no function call usage
         # simulate finding a function definition that includes the fixture as a parameter
-        return [f"{py_file}:1:def test_something(sample_fixture): pass"]
+        return [f"{py_file.as_posix()}:1:def test_something(sample_fixture): pass"]
 
     mocker.patch("apps.unused_code.unused_code._git_grep", side_effect=_mock_grep)
 
