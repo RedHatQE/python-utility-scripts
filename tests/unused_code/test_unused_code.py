@@ -1,3 +1,5 @@
+import textwrap
+
 import pytest
 from simple_logger.logger import get_logger
 
@@ -46,7 +48,8 @@ def test_unused_code_handles_pytest_fixture_parameter_usage(mocker, tmp_path):
     # Create a temporary python file with a pytest fixture and a test using it as a parameter
     py_file = tmp_path / "tmp_fixture_usage.py"
     py_file.write_text(
-        """
+        textwrap.dedent(
+            """
 import pytest
 
 @pytest.fixture
@@ -56,6 +59,7 @@ def sample_fixture():
 def test_something(sample_fixture):
     assert sample_fixture == 1
 """
+        )
     )
 
     # Mock grep to simulate: no direct call matches, but parameter usage is detected
@@ -75,10 +79,12 @@ def test_unused_code_handles_no_matches_without_crashing(mocker, tmp_path):
     # Create a temporary python file with a simple function
     py_file = tmp_path / "tmp_simple.py"
     py_file.write_text(
-        """
+        textwrap.dedent(
+            """
 def my_helper():
     return 42
 """
+        )
     )
 
     # Mock grep to simulate no matches anywhere
@@ -92,13 +98,15 @@ def my_helper():
 def test_unused_code_skips_autouse_fixture(tmp_path):
     py_file = tmp_path / "tmp_autouse_fixture.py"
     py_file.write_text(
-        """
+        textwrap.dedent(
+            """
 import pytest
 
 @pytest.fixture(autouse=True)
 def auto_fixture():
     return 1
 """
+        )
     )
 
     result = process_file(py_file=str(py_file), func_ignore_prefix=[], file_ignore_list=[])
@@ -110,8 +118,8 @@ def test_git_grep_raises_on_unexpected_error(mocker):
     class FakeCompleted:
         def __init__(self):
             self.returncode = 2
-            self.stdout = ""
-            self.stderr = "fatal: not a git repository"
+            self.stdout = b""
+            self.stderr = b"fatal: not a git repository"
 
     mocker.patch("apps.unused_code.unused_code.subprocess.run", return_value=FakeCompleted())
     with pytest.raises(RuntimeError):
