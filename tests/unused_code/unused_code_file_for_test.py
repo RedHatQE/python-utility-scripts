@@ -1,10 +1,7 @@
-def unused_code_check_fail():
-    pass
+def unused_code_check_fail() -> None: ...
 
 
-def unused_code_check_file():
-    pass
+def unused_code_check_file() -> None: ...
 
 
-def skip_with_comment():  # skip-unused-code
-    pass
+def skip_with_comment() -> None: ...  # skip-unused-code
