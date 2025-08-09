@@ -150,11 +150,11 @@ def process_jira_command_line_config_file(
     # Process all the arguments passed from command line or config file or environment variable
     config_dict = get_util_config(util_name="pyutils-jira", config_file_path=config_file_path)
 
-    # If a config file path is provided, prefer values from the config file over environment defaults
-    # to ensure reproducible behavior during CI/tests and local runs.
+    # If a config file path is provided, prefer config values when present,
+    # otherwise fall back to CLI/env values to avoid surprising failures.
     if config_file_path:
-        url = config_dict.get("url", "")
-        token = config_dict.get("token", "")
+        url = config_dict.get("url") or url
+        token = config_dict.get("token") or token
     else:
         url = url or config_dict.get("url", "")
         token = token or config_dict.get("token", "")
