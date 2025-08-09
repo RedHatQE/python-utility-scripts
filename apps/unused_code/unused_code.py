@@ -107,7 +107,7 @@ def _build_call_pattern(function_name: str) -> str:
     if flag == "-P":
         return rf"\b{function_name}\s*[(]"
     # -G basic regex: use word-start token \< and literal '('
-    return rf"\<{function_name}\s*[(]"
+    return rf"\<{function_name}[[:space:]]*[(]"
 
 
 def _build_fixture_param_pattern(function_name: str) -> str:
@@ -200,8 +200,9 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
         # First, look for call sites: function_name(...)
         for entry in _git_grep(pattern=_build_call_pattern(function_name=func.name)):
             # git grep -n output format: path:line-number:line-content
-            # Use rsplit to handle Windows drive letters and paths with colons
-            parts = entry.rsplit(":", 2)
+            # Use split to properly handle git grep format: first colon separates path from line number,
+            # second colon separates line number from content
+            parts = entry.split(":", 2)
             if len(parts) != 3:
                 continue
             _path, _lineno, _line = parts
@@ -223,8 +224,9 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
             param_pattern = _build_fixture_param_pattern(function_name=func.name)
             for entry in _git_grep(pattern=param_pattern):
                 # git grep -n output format: path:line-number:line-content
-                # Use rsplit to handle Windows drive letters and paths with colons
-                parts = entry.rsplit(":", 2)
+                # Use split to properly handle git grep format: first colon separates path from line number,
+                # second colon separates line number from content
+                parts = entry.split(":", 2)
                 if len(parts) != 3:
                     continue
                 _path, _lineno, _line = parts
