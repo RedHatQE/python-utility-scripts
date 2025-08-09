@@ -73,6 +73,7 @@ def _git_grep(pattern: str) -> list[str]:
         "-n",  # include line numbers
         "--no-color",
         "--untracked",
+        "-I",  # ignore binary files
         "-P",  # PCRE for proper \b (word boundary) handling
         pattern,
     ]

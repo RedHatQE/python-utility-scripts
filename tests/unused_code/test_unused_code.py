@@ -118,9 +118,32 @@ def test_git_grep_raises_on_unexpected_error(mocker):
     class FakeCompleted:
         def __init__(self):
             self.returncode = 2
-            self.stdout = b""
-            self.stderr = b"fatal: not a git repository"
+            self.stdout = ""
+            self.stderr = "fatal: not a git repository"
 
     mocker.patch("apps.unused_code.unused_code.subprocess.run", return_value=FakeCompleted())
     with pytest.raises(RuntimeError):
         _git_grep(pattern="anything")
+
+
+def test_commented_usage_is_ignored(mocker, tmp_path):
+    # Create a temporary python file with a simple function
+    py_file = tmp_path / "tmp_commented_usage.py"
+    py_file.write_text(
+        textwrap.dedent(
+            """
+def only_here():
+    return 0
+"""
+        )
+    )
+
+    # Simulate git grep finding only a commented reference
+    mocker.patch(
+        "apps.unused_code.unused_code._git_grep",
+        return_value=["some/other/file.py:12:# only_here() is not really used"],
+    )
+
+    # Should still be reported as unused because usage is commented out
+    result = process_file(py_file=str(py_file), func_ignore_prefix=[], file_ignore_list=[])
+    assert "Is not used anywhere in the code." in result
