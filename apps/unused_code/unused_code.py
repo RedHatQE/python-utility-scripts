@@ -100,6 +100,30 @@ def is_pytest_fixture(func: ast.FunctionDef) -> bool:
     return False
 
 
+def _build_call_pattern(function_name: str) -> str:
+    r"""Build a portable regex to match function call sites.
+
+    Uses word boundary semantics based on the detected grep engine.
+    - PCRE (-P):    \bname[(]
+    - Basic (-G):   \<name[(]
+    """
+    flag = _detect_supported_grep_flag()
+    if flag == "-P":
+        return rf"\b{function_name}[(]"
+    # -G basic regex: use word-start token \< and literal '('
+    return rf"\<{function_name}[(]"
+
+
+def _build_fixture_param_pattern(function_name: str) -> str:
+    r"""Build a portable regex to find a parameter named `function_name` in a def signature."""
+    flag = _detect_supported_grep_flag()
+    if flag == "-P":
+        return rf"def\s+\w+\s*[(][^)]*\b{function_name}\b"
+    # For -G (basic regex), avoid PCRE tokens; use POSIX classes and literals
+    # def[space][ident][ident*][space*]([^)]*\<name\>)
+    return rf"def[[:space:]][[:alnum:]_][[:alnum:]_]*[[:space:]]*[(][^)]*\<{function_name}\>"
+
+
 def _git_grep(pattern: str) -> list[str]:
     """Run git grep with a pattern and return matching lines.
 
@@ -177,7 +201,7 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
         used = False
 
         # First, look for call sites: function_name(...)
-        for entry in _git_grep(pattern=f"{func.name}(.*)"):
+        for entry in _git_grep(pattern=_build_call_pattern(function_name=func.name)):
             # git grep -n output format: path:line-number:line-content
             # Split into exactly three parts to safely handle colons within the line content
             _path, _lineno, _line = entry.split(":", 2)
@@ -196,7 +220,7 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
 
         # If not found and it's a pytest fixture, also search for parameter usage in function definitions
         if not used and is_pytest_fixture(func=func):
-            param_pattern = rf"def\s+\w+\s*\([^)]*\b{func.name}\b"
+            param_pattern = _build_fixture_param_pattern(function_name=func.name)
             for entry in _git_grep(pattern=param_pattern):
                 # git grep -n output format: path:line-number:line-content
                 # Split into exactly three parts to safely handle colons within the line content
