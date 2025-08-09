@@ -31,6 +31,55 @@ def is_fixture_autouse(func: ast.FunctionDef) -> bool:
     return False
 
 
+def is_pytest_fixture(func: ast.FunctionDef) -> bool:
+    """Return True if the function is decorated with @pytest.fixture.
+
+    Detects any pytest fixture regardless of parameters (scope, autouse, etc.).
+    """
+    decorators: list[Any] = func.decorator_list
+    for decorator in decorators or []:
+        # Case 1: @pytest.fixture(...)
+        if hasattr(decorator, "func"):
+            if getattr(decorator.func, "attr", None) and getattr(decorator.func, "value", None):
+                if decorator.func.attr == "fixture" and getattr(decorator.func.value, "id", None) == "pytest":
+                    return True
+        # Case 2: @pytest.fixture (no parentheses)
+        else:
+            if getattr(decorator, "attr", None) == "fixture" and getattr(decorator, "value", None):
+                if getattr(decorator.value, "id", None) == "pytest":
+                    return True
+    return False
+
+
+def _git_grep(pattern: str) -> list[str]:
+    """Run git grep with a pattern and return matching lines.
+
+    - Includes untracked files so local changes are considered.
+    - Treats exit code 1 (no matches) as an empty result.
+    - Any other non-zero exit code is logged at debug level and treated as empty.
+    """
+    cmd = [
+        "git",
+        "grep",
+        "-n",  # include line numbers
+        "--no-color",
+        "--untracked",
+        "-wE",
+        pattern,
+    ]
+    result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    if result.returncode == 0:
+        return [line for line in result.stdout.splitlines() if line]
+    if result.returncode == 1:
+        # no matches
+        LOGGER.debug(f"git grep returned no matches for pattern: {pattern}")
+        return []
+
+    # Unexpected error: propagate to caller so the CLI can exit with a non-zero code cleanly
+    error_message = result.stderr.strip() or "Unknown git grep error"
+    raise RuntimeError(f"git grep failed (rc={result.returncode}) for pattern {pattern!r}: {error_message}")
+
+
 def _iter_functions(tree: ast.Module) -> Iterable[ast.FunctionDef]:
     """
     Get all function from python file
@@ -61,6 +110,8 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
     with open(py_file) as fd:
         tree = parse(source=fd.read())
 
+    unused_messages: list[str] = []
+
     for func in _iter_functions(tree=tree):
         if func_ignore_prefix and is_ignore_function_list(ignore_prefix_list=func_ignore_prefix, function=func):
             LOGGER.debug(f"Skipping function: {func.name}")
@@ -75,14 +126,16 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
             continue
 
         used = False
-        _func_grep_found = subprocess.check_output(["git", "grep", "-wE", f"{func.name}(.*)"], shell=False)
 
-        for entry in _func_grep_found.decode().splitlines():
+        # First, look for call sites: function_name(...)
+        for entry in _git_grep(pattern=f"{func.name}(.*)"):
             _, _line = entry.split(":", 1)
 
+            # ignore its own definition
             if f"def {func.name}" in _line:
                 continue
 
+            # ignore commented lines
             if _line.strip().startswith("#"):
                 continue
 
@@ -90,10 +143,25 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
                 used = True
                 break
 
-        if not used:
-            return f"{os.path.relpath(py_file)}:{func.name}:{func.lineno}:{func.col_offset} Is not used anywhere in the code."
+        # If not found and it's a pytest fixture, also search for parameter usage in function definitions
+        if not used and is_pytest_fixture(func=func):
+            param_pattern = rf"def\s+\w+\s*\([^)]*\b{func.name}\b"
+            for entry in _git_grep(pattern=param_pattern):
+                _, _line = entry.split(":", 1)
 
-    return ""
+                # ignore commented lines
+                if _line.strip().startswith("#"):
+                    continue
+
+                used = True
+                break
+
+        if not used:
+            unused_messages.append(
+                f"{os.path.relpath(py_file)}:{func.name}:{func.lineno}:{func.col_offset} Is not used anywhere in the code."
+            )
+
+    return "\n".join(unused_messages)
 
 
 @click.command()
@@ -124,25 +192,28 @@ def get_unused_functions(
     func_ignore_prefix = exclude_function_prefixes or unused_code_config.get("exclude_function_prefix", [])
     file_ignore_list = exclude_files or unused_code_config.get("exclude_files", [])
 
-    jobs: list[Future] = []
+    jobs: dict[Future, str] = {}
     if not os.path.exists(".git"):
         LOGGER.error("Must be run from a git repository")
         sys.exit(1)
 
     with ThreadPoolExecutor() as executor:
         for py_file in all_python_files():
-            jobs.append(
-                executor.submit(
-                    process_file,
-                    py_file=py_file,
-                    func_ignore_prefix=func_ignore_prefix,
-                    file_ignore_list=file_ignore_list,
-                )
+            future = executor.submit(
+                process_file,
+                py_file=py_file,
+                func_ignore_prefix=func_ignore_prefix,
+                file_ignore_list=file_ignore_list,
             )
+            jobs[future] = py_file
 
-        for result in as_completed(jobs):
-            if unused_func := result.result():
-                unused_functions.append(unused_func)
+        for future in as_completed(jobs):
+            try:
+                if unused_func := future.result():
+                    unused_functions.append(unused_func)
+            except Exception as exc:
+                LOGGER.error(f"Failed to process file {jobs[future]}: {exc}")
+                sys.exit(2)
 
     if unused_functions:
         click.echo("\n".join(unused_functions))
