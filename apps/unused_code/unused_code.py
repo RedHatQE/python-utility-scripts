@@ -6,7 +6,7 @@ import os
 import subprocess
 import sys
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 import click
 from ast_comments import parse
@@ -15,6 +15,47 @@ from simple_logger.logger import get_logger
 from apps.utils import ListParamType, all_python_files, get_util_config
 
 LOGGER = get_logger(name=__name__)
+
+
+_GREP_FLAG: Optional[str] = None
+
+
+def _detect_supported_grep_flag() -> str:
+    """Detect and cache a supported regex engine flag for git grep.
+
+    Prefer PCRE ("-P") for proper \b handling; fall back to basic regex ("-G").
+    Run a harmless grep to verify support and cache the first working flag.
+    """
+    global _GREP_FLAG
+    if _GREP_FLAG:
+        return _GREP_FLAG
+
+    candidate_flags = ["-P", "-G"]
+    for flag in candidate_flags:
+        try:
+            # Use a trivial pattern to minimize output. We only care that the flag is accepted.
+            probe_cmd = [
+                "git",
+                "grep",
+                "-n",
+                "--no-color",
+                "--untracked",
+                "-I",
+                flag,
+                "^$",  # match empty lines; success (rc=0) or no matches (rc=1) are both fine
+            ]
+            result = subprocess.run(probe_cmd, check=False, capture_output=True, text=True)
+            if result.returncode in (0, 1):
+                _GREP_FLAG = flag
+                return _GREP_FLAG
+        except Exception:
+            # Try next candidate
+            pass
+
+    raise RuntimeError(
+        "git grep does not support '-P' (PCRE) or '-G' (basic regex) on this platform. "
+        "Please ensure a compatible git/grep is installed."
+    )
 
 
 def is_fixture_autouse(func: ast.FunctionDef) -> bool:
@@ -74,7 +115,7 @@ def _git_grep(pattern: str) -> list[str]:
         "--no-color",
         "--untracked",
         "-I",  # ignore binary files
-        "-P",  # PCRE for proper \b (word boundary) handling
+        _detect_supported_grep_flag(),
         pattern,
     ]
     result = subprocess.run(cmd, check=False, capture_output=True, text=True)
