@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import logging
 import os
+import re
 import subprocess
 import sys
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
@@ -100,6 +101,8 @@ def _build_call_pattern(function_name: str) -> str:
     r"""Build a portable regex to match function call sites.
 
     Uses word boundary semantics based on the detected grep engine.
+    The pattern is designed to match actual function calls while minimizing
+    false positives from documentation patterns.
     - PCRE (-P):    \bname\s*[(]
     - Basic (-G):   \<name\s*[(]
     """
@@ -118,6 +121,67 @@ def _build_fixture_param_pattern(function_name: str) -> str:
     # For -G (basic regex), avoid PCRE tokens; use POSIX classes and literals
     # def[space+][ident][ident*][space*]([^)]*\<name\>)
     return rf"def[[:space:]]+[[:alnum:]_][[:alnum:]_]*[[:space:]]*[(][^)]*\<{function_name}\>"
+
+
+def _is_documentation_pattern(line: str, function_name: str) -> bool:
+    """Check if a line contains a documentation pattern rather than a function call.
+
+    Filters out common documentation patterns that include function names with parentheses:
+    - Parameter descriptions: 'param_name (type): description'
+    - Type annotations in docstrings
+    - Inline documentation patterns
+    - Lines within triple-quoted strings that aren't actual code
+
+    Args:
+        line: The line of code to check
+        function_name: The function name we're searching for
+
+    Returns:
+        True if this appears to be documentation, False if it might be a function call
+    """
+    stripped_line = line.strip()
+
+    # First, exclude obvious code patterns that should never be considered documentation
+    # Skip control flow statements and common code patterns
+    code_prefixes = ["if ", "elif ", "while ", "for ", "with ", "assert ", "return ", "yield ", "raise "]
+    if any(stripped_line.startswith(prefix) for prefix in code_prefixes):
+        return False
+
+    # Skip function definitions (these are already filtered elsewhere but be extra safe)
+    if stripped_line.startswith("def "):
+        return False
+
+    # Pattern 1: Parameter description format "name (type): description"
+    # But be more specific - require either indentation or specific doc context
+    # This catches patterns like "    namespace (str): The namespace of the pod."
+    if re.search(rf"^\s+{re.escape(function_name)}\s*\([^)]*\)\s*:\s+\w", stripped_line):
+        return True
+
+    # Pattern 2: Lines that look like type annotations in docstrings
+    # Must have descriptive text after the colon, not just code
+    type_annotation_pattern = rf"\b{re.escape(function_name)}\s*\([^)]*\)\s*:\s+[A-Z][a-z]"
+    if re.search(type_annotation_pattern, stripped_line):
+        return True
+
+    # Pattern 3: Lines that contain common documentation keywords near the function name
+    doc_keywords = ["Args:", "Arguments:", "Parameters:", "Returns:", "Return:", "Raises:", "Note:", "Example:"]
+    for keyword in doc_keywords:
+        if keyword in stripped_line:
+            # If we find doc keywords and function name with parens, likely documentation
+            if f"{function_name}(" in stripped_line:
+                return True
+            # Also catch cases where the keyword line itself contains the function name
+            if keyword.rstrip(":").lower() == function_name.lower():
+                return True
+
+    # Pattern 4: Check for common docstring patterns
+    # Lines that start with common documentation patterns
+    doc_starters = ['"""', "'''", "# ", "## ", "### ", "*", "-", "•"]
+    if any(stripped_line.startswith(starter) for starter in doc_starters):
+        if f"{function_name}(" in stripped_line:
+            return True
+
+    return False
 
 
 def _git_grep(pattern: str) -> list[str]:
@@ -213,6 +277,11 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
 
             # ignore commented lines
             if _line.strip().startswith("#"):
+                continue
+
+            # Filter out documentation patterns that aren't actual function calls
+            # This prevents false positives from docstrings, parameter descriptions, etc.
+            if _is_documentation_pattern(_line, func.name):
                 continue
 
             if func.name in _line:
