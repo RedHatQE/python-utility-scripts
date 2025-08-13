@@ -45,7 +45,7 @@ skip_empty = true
 
 [tool.coverage.html]
 directory = ".tests_coverage"
-show_contexts = true
+show_contexts = false
 
 [tool.uv]
 default-groups = [ "dev", "test" ]
