@@ -269,7 +269,7 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
             parts = entry.split(":", 2)
             if len(parts) != 3:
                 continue
-            _path, _lineno, _line = parts
+            _, _, _line = parts
 
             # ignore its own definition
             if f"def {func.name}" in _line:
@@ -356,6 +356,13 @@ def get_unused_functions(
         LOGGER.error(str(e))
         sys.exit(1)
 
+    # res = process_file(
+    #     py_file="tests/unused_code/unused_code_file_for_test.py",
+    #     func_ignore_prefix=func_ignore_prefix,
+    #     file_ignore_list=file_ignore_list,
+    # )
+    # __import__("ipdb").set_trace()
+    # return
     with ThreadPoolExecutor() as executor:
         for py_file in all_python_files():
             future = executor.submit(
