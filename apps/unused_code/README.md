@@ -4,10 +4,41 @@ Helper to identify unused code in a pytest repository. It should be run from ins
 
 ## Usage
 
+### Basic Usage
+
 ```bash
+# Analyze all Python files in the current directory (must be a git repository)
 pyutils-unusedcode
+
+# Show help with all available options
 pyutils-unusedcode --help
 ```
+
+### Analyze Specific Files or Directories
+
+```bash
+# Analyze a single Python file
+pyutils-unusedcode --file-path /path/to/your/file.py
+pyutils-unusedcode -f /path/to/your/file.py
+
+# Analyze all Python files in a specific directory recursively
+pyutils-unusedcode --directory /path/to/your/project
+pyutils-unusedcode -d /path/to/your/project
+```
+
+**Note:** When using `--file-path` or `--directory`, the tool will analyze files from any git repository, not just the current working directory.
+
+## Command-Line Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--file-path` | `-f` | Analyze a single Python file for unused functions. Must be an existing .py file. |
+| `--directory` | `-d` | Analyze all Python files in a directory recursively for unused functions. Must be an existing directory. |
+| `--exclude-files` | | Comma-separated list of files to exclude from analysis. |
+| `--exclude-function-prefixes` | | Comma-separated list of function prefixes to exclude from analysis. |
+| `--config-file-path` | | Path to custom config file (default: `~/.config/python-utility-scripts/config.yaml`). |
+| `--verbose` | `-v` | Enable verbose logging for debugging. |
+| `--help` | | Show help message with all available options. |
 
 ## Config file
 

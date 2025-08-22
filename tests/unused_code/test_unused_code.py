@@ -1,3 +1,4 @@
+import os
 import textwrap
 
 import pytest
@@ -17,7 +18,10 @@ def test_unused_code():
 
 
 def test_unused_code_file_list():
-    result = get_cli_runner().invoke(get_unused_functions, '--exclude-files "unused_code_file_for_test.py"')
+    result = get_cli_runner().invoke(
+        get_unused_functions,
+        '--exclude-files "unused_code_file_for_test.py"',
+    )
     LOGGER.info(f"Result output: {result.output}, exit code: {result.exit_code}, exceptions: {result.exception}")
     assert result.exit_code == 0
     assert "Is not used anywhere in the code" not in result.output
@@ -26,7 +30,12 @@ def test_unused_code_file_list():
 def test_unused_code_function_list_exclude_all():
     result = get_cli_runner().invoke(
         get_unused_functions,
-        ["--exclude-function-prefixes", "unused_code_", "--exclude-files", "unused_code_file_for_test.py"],
+        [
+            "--exclude-function-prefixes",
+            "unused_code_",
+            "--exclude-files",
+            "manifests/unused_code_file_for_test.py",
+        ],
     )
     LOGGER.info(f"Result output: {result.output}, exit code: {result.exit_code}, exceptions: {result.exception}")
     assert result.exit_code == 0
@@ -66,12 +75,11 @@ def test_something(sample_fixture):
     )
 
     # Mock grep to simulate: no direct call matches, but parameter usage is detected
-    def _mock_grep(pattern: str):
-        # Our call-site pattern now ends with '['(']'
-        if pattern.endswith("[(]"):
-            return []  # simulate no function call usage
-        # simulate finding a function definition that includes the fixture as a parameter
-        return [f"{py_file.as_posix()}:1:def test_something(sample_fixture): pass"]
+    def _mock_grep(pattern: str, **kwargs):
+        # The usage pattern will now match the fixture name in the function signature
+        if pattern == r"\bsample_fixture\b":
+            return [f"{py_file.as_posix()}:1:def test_something(sample_fixture): pass"]
+        return []
 
     mocker.patch("apps.unused_code.unused_code._git_grep", side_effect=_mock_grep)
 
@@ -209,3 +217,77 @@ def my_function():
     # Should detect the function as used despite malformed entries
     result = process_file(py_file=str(py_file), func_ignore_prefix=[], file_ignore_list=[])
     assert result == ""  # Empty string means function is used, not unused
+
+
+def test_function_as_argument_is_used():
+    result = process_file(
+        py_file="tests/unused_code/manifests/functions_as_args.py",
+        func_ignore_prefix=[],
+        file_ignore_list=[],
+    )
+    assert result == ""
+
+
+def test_unused_code_with_file_path_no_unused():
+    result = get_cli_runner().invoke(
+        get_unused_functions,
+        ["--file-path", "tests/unused_code/manifests/functions_as_args.py"],
+    )
+    assert result.exit_code == 0
+    assert "Is not used anywhere in the code" not in result.output
+
+
+def test_unused_code_with_file_path_with_unused():
+    result = get_cli_runner().invoke(
+        get_unused_functions,
+        ["--file-path", "tests/unused_code/manifests/unused_code_file_for_test.py"],
+    )
+    assert result.exit_code == 1
+    assert "Is not used anywhere in the code" in result.output
+
+
+def test_unused_code_with_directory():
+    result = get_cli_runner().invoke(get_unused_functions, ["--directory", "tests/unused_code/manifests/"])
+    assert result.exit_code == 1
+    assert "Is not used anywhere in the code" in result.output
+
+
+def test_unused_code_with_config_file():
+    result = get_cli_runner().invoke(
+        get_unused_functions,
+        [
+            "--config-file-path",
+            "tests/unused_code/manifests/test_config.yaml",
+            "--directory",
+            "tests/unused_code/manifests/",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Is not used anywhere in the code" not in result.output
+
+
+def test_unused_code_with_file_path_as_dir():
+    result = get_cli_runner().invoke(get_unused_functions, ["--file-path", "tests/unused_code/"])
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+
+
+def test_unused_code_with_directory_as_file():
+    result = get_cli_runner().invoke(
+        get_unused_functions,
+        ["--directory", "tests/unused_code/test_unused_code.py"],
+    )
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+
+
+def test_unused_code_not_a_git_repo(tmp_path):
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        # tmp_path is not a git repo, so this should fail
+        result = get_cli_runner().invoke(get_unused_functions)
+        assert result.exit_code == 1
+        assert isinstance(result.exception, SystemExit)
+    finally:
+        os.chdir(original_cwd)
