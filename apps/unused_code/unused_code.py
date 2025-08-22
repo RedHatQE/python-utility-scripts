@@ -312,7 +312,7 @@ def _is_documentation_pattern(line: str, function_name: str) -> bool:
     # Pattern 1: Parameter description format "name (type): description"
     # But be more specific - require either indentation or specific doc context
     # This catches patterns like "    namespace (str): The namespace of the pod."
-    if re.search(rf"^\s+{re.escape(function_name)}\s*\([^)]*\)\s*:", stripped_line):
+    if re.search(rf"^\s+{re.escape(function_name)}\s*\([^)]*\)\s*:", line):
         return True
 
     # Pattern 2: Lines that look like type annotations in docstrings

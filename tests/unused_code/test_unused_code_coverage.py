@@ -135,7 +135,6 @@ def test_check_getfixturevalue_pattern_error(tmp_path):
     assert not _check_getfixturevalue_pattern("my_fixture", str(py_file))
 
 
-@pytest.mark.xfail
 @pytest.mark.parametrize(
     ("line", "is_doc"),
     [
