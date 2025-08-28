@@ -73,12 +73,14 @@ class ListParamType(click.ParamType):
                 )
 
 
-def all_python_files() -> Iterable[str]:
+def all_python_files(directory: click.Path | None = None) -> Iterable[str]:
     """
     Get all python files from current directory and subdirectories
     """
     exclude_dirs = [".tox", "venv", ".pytest_cache", "site-packages", ".git"]
-    for root, _, files in os.walk(os.path.abspath(os.curdir)):
+    target = str(directory) if directory else os.path.abspath(os.curdir)
+
+    for root, _, files in os.walk(target):
         if [_dir for _dir in exclude_dirs if _dir in root]:
             continue
         for filename in files:

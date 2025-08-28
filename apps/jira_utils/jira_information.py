@@ -151,6 +151,7 @@ def process_jira_command_line_config_file(
     config_dict = get_util_config(util_name="pyutils-jira", config_file_path=config_file_path)
     url = url or config_dict.get("url", "")
     token = token or config_dict.get("token", "")
+
     if not (url and token):
         LOGGER.error("Jira url and token are required.")
         sys.exit(1)

@@ -1,0 +1,4 @@
+pyutils-unusedcode:
+  exclude_files:
+    - "unused_code_file_for_test.py"
+    - "functions_as_args.py"
