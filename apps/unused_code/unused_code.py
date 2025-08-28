@@ -477,6 +477,9 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
 
             # Ignore commented lines (full line or inline)
             code_part = _line.split("#", 1)[0]
+            if code_part.startswith("import") or code_part.startswith("from"):
+                continue
+
             if func.name not in code_part:
                 continue
 
