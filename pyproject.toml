@@ -83,7 +83,7 @@ test = [
   "ipdb>=0.13.13",
   "ipython>=8.18.1",
   "pytest>=8.0.0,<9",
-  "pytest-cov>=6.0.0,<7"
+  "pytest-cov>=7,<8"
 ]
 
 [build-system]
