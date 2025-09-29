@@ -1,6 +1,6 @@
 [project]
 name = "python-utility-scripts"
-version = "1.0.24"
+version = "1.0.25"
 description = "Python utility scripts"
 requires-python = ">=3.9"
 readme = "README.md"
