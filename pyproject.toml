@@ -82,8 +82,8 @@ dev = [ "ipdb>=0.13.13,<0.14", "ipython" ]
 test = [
   "ipdb>=0.13.13",
   "ipython>=8.18.1",
-  "pytest>=8.0.0,<9",
-  "pytest-cov>=6.0.0,<7"
+  "pytest>=9,<10",
+  "pytest-cov>=7,<8"
 ]
 
 [build-system]
