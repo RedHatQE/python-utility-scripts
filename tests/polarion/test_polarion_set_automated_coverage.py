@@ -102,11 +102,12 @@ class TestRemoveApprovedTests:
             previous_commit=prev_commit,
             current_commit=curr_commit,
         )
-        mock_update.assert_called_once_with(
-            polarion_ids=["TEST-002", "TEST-003"],  # Should exclude added_ids overlap
-            project_id=project_id,
-            is_automated=False,
-        )
+        # Verify the call was made with the correct IDs (order-independent)
+        args, kwargs = mock_update.call_args
+        assert set(kwargs["polarion_ids"]) == {"TEST-002", "TEST-003"}  # Should exclude added_ids overlap
+        assert kwargs["project_id"] == project_id
+        assert kwargs["is_automated"] is False
+
         assert result == {"updated": ["TEST-002", "TEST-003"], "failed": []}
 
     @patch("apps.polarion.polarion_set_automated.find_polarion_ids")

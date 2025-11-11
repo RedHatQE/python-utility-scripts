@@ -40,7 +40,7 @@ pyutils-jira = "apps.jira_utils.jira_information:get_jira_mismatch"
 omit = ["tests/*"]
 
 [tool.coverage.report]
-fail_under = 60
+fail_under = 70
 skip_empty = true
 
 [tool.coverage.html]
