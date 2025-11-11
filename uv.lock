@@ -807,7 +807,7 @@ wheels = [
 
 [[package]]
 name = "pyhelper-utils"
-version = "1.0.19"
+version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ipdb" },
@@ -816,7 +816,7 @@ dependencies = [
     { name = "requests" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/77/e1/1323546950a087c22564305bb4b1400a619599c07e7407bd127b40cfbbb5/pyhelper_utils-1.0.19.tar.gz", hash = "sha256:3881aaba7f9310da47b3ff317679f4b301c118ebc50da75943d6e15dd74c2e5e", size = 10770, upload-time = "2025-09-29T15:38:30.114Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8b/d0/00161ed607273db4c78305d8c8267ff306537a08e465e75b7fe781bb7696/pyhelper_utils-2.0.0.tar.gz", hash = "sha256:4decb58db7ed49894612151ad142dddc9b4d729b35b61cb043b2d54a08fe7775", size = 10763, upload-time = "2025-11-11T21:17:31.552Z" }
 
 [[package]]
 name = "pylero"
@@ -967,7 +967,7 @@ requires-dist = [
     { name = "ast-comments", specifier = ">=1.2.2" },
     { name = "click", specifier = ">=8.1.7" },
     { name = "jira", specifier = ">=3.6.0,<4" },
-    { name = "pyhelper-utils", specifier = ">=1.0.1,<2" },
+    { name = "pyhelper-utils", specifier = ">=2,<3" },
     { name = "pylero", specifier = ">=0.1.0,<0.2" },
     { name = "pytest-mock", specifier = ">=3.14.0,<4" },
     { name = "python-simple-logger", specifier = ">=2.0.3,<3" },
