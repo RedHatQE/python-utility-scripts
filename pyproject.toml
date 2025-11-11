@@ -1,13 +1,13 @@
 [project]
 name = "python-utility-scripts"
-version = "1.0.25"
+version = "2.0.1"
 description = "Python utility scripts"
 requires-python = ">=3.10"
 readme = "README.md"
 license = "Apache-2.0"
 classifiers = [
   "Programming Language :: Python :: 3",
-  "Operating System :: OS Independent"
+  "Operating System :: OS Independent",
 ]
 dependencies = [
   "pylero>=0.1.0,<0.2",
@@ -18,26 +18,26 @@ dependencies = [
   "python-simple-logger>=2.0.2,<3",
   "pyhelper-utils>=1.0.1,<2",
   "ast-comments>=1.2.2",
-  "click (>=8.1.7)"
+  "click (>=8.1.7)",
 ]
 
-  [[project.authors]]
-  name = "dbasunag"
-  email = "dbasunag@redhat.com"
+[[project.authors]]
+name = "dbasunag"
+email = "dbasunag@redhat.com"
 
-  [project.urls]
-  Homepage = "https://github.com/RedHatQE/python-utility-scripts"
-  Repository = "https://github.com/RedHatQE/python-utility-scripts"
-  Documentation = "https://github.com/RedHatQE/python-utility-scripts/blob/main/README.md"
+[project.urls]
+Homepage = "https://github.com/RedHatQE/python-utility-scripts"
+Repository = "https://github.com/RedHatQE/python-utility-scripts"
+Documentation = "https://github.com/RedHatQE/python-utility-scripts/blob/main/README.md"
 
-  [project.scripts]
-  pyutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
-  pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
-  pyutils-polarion-set-automated = "apps.polarion.polarion_set_automated:polarion_approve_automate"
-  pyutils-jira = "apps.jira_utils.jira_information:get_jira_mismatch"
+[project.scripts]
+pyutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
+pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
+pyutils-polarion-set-automated = "apps.polarion.polarion_set_automated:polarion_approve_automate"
+pyutils-jira = "apps.jira_utils.jira_information:get_jira_mismatch"
 
 [tool.coverage.run]
-omit = [ "tests/*" ]
+omit = ["tests/*"]
 
 [tool.coverage.report]
 fail_under = 60
@@ -48,13 +48,13 @@ directory = ".tests_coverage"
 show_contexts = false
 
 [tool.uv]
-default-groups = [ "dev", "test" ]
+default-groups = ["dev", "test"]
 
 [tool.hatch.build.targets.sdist]
-include = [ "apps" ]
+include = ["apps"]
 
 [tool.hatch.build.targets.wheel]
-include = [ "apps" ]
+include = ["apps"]
 
 [tool.mypy]
 show_error_codes = true
@@ -71,21 +71,21 @@ line-length = 120
 fix = true
 output-format = "grouped"
 
-  [tool.ruff.lint]
-  extend-select = [ "I" ]
+[tool.ruff.lint]
+extend-select = ["I"]
 
-  [tool.ruff.format]
-  exclude = [ ".git", ".venv", ".mypy_cache", ".tox", "__pycache__" ]
+[tool.ruff.format]
+exclude = [".git", ".venv", ".mypy_cache", ".tox", "__pycache__"]
 
 [dependency-groups]
-dev = [ "ipdb>=0.13.13,<0.14", "ipython" ]
+dev = ["ipdb>=0.13.13,<0.14", "ipython"]
 test = [
   "ipdb>=0.13.13",
   "ipython>=8.18.1",
   "pytest>=9.0.0,<10",
-  "pytest-cov>=7.0.0,<8"
+  "pytest-cov>=7.0.0,<8",
 ]
 
 [build-system]
-requires = [ "hatchling" ]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
