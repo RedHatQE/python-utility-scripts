@@ -934,7 +934,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/ef/7e/6eeae8c7affa2c4c1
 
 [[package]]
 name = "python-utility-scripts"
-version = "1.0.25"
+version = "2.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "ast-comments" },
@@ -970,7 +970,7 @@ requires-dist = [
     { name = "pyhelper-utils", specifier = ">=1.0.1,<2" },
     { name = "pylero", specifier = ">=0.1.0,<0.2" },
     { name = "pytest-mock", specifier = ">=3.14.0,<4" },
-    { name = "python-simple-logger", specifier = ">=2.0.2,<3" },
+    { name = "python-simple-logger", specifier = ">=2.0.3,<3" },
     { name = "pyyaml", specifier = ">=6.0.1,<7" },
     { name = "tenacity", specifier = ">=9.0.0,<10" },
 ]
