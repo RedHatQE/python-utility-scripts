@@ -103,7 +103,7 @@ class TestRemoveApprovedTests:
             current_commit=curr_commit,
         )
         # Verify the call was made with the correct IDs (order-independent)
-        args, kwargs = mock_update.call_args
+        _, kwargs = mock_update.call_args
         assert set(kwargs["polarion_ids"]) == {"TEST-002", "TEST-003"}  # Should exclude added_ids overlap
         assert kwargs["project_id"] == project_id
         assert kwargs["is_automated"] is False
@@ -355,7 +355,7 @@ class TestPolarionApproveAutomateCommand:
                 # Assert
                 assert result.exit_code == 0
                 # Check that get_polarion_project_id was called with default config path
-                args, kwargs = mock_get_project.call_args
+                _, kwargs = mock_get_project.call_args
                 assert kwargs["util_name"] == "pyutils-polarion-set-automated"
                 assert kwargs["config_file_path"].endswith("/.config/python-utility-scripts/config.yaml")
 
@@ -385,7 +385,7 @@ class TestPolarionApproveAutomateCommand:
     @patch("apps.polarion.polarion_set_automated.find_polarion_ids")
     @patch("apps.polarion.polarion_set_automated.approve_tests")
     @patch("apps.polarion.polarion_set_automated.remove_approved_tests")
-    def test_command_custom_config_file_path(self, mock_remove, mock_approve, mock_find, mock_get_project):
+    def test_command_custom_config_file_path(self, mock_remove, _mock_approve, mock_find, mock_get_project):
         """Test command with custom config file path"""
         # Arrange
         custom_config_path = "/custom/path/config.yaml"
@@ -409,7 +409,7 @@ class TestPolarionApproveAutomateCommand:
     @patch("apps.polarion.polarion_set_automated.find_polarion_ids")
     @patch("apps.polarion.polarion_set_automated.approve_tests")
     @patch("apps.polarion.polarion_set_automated.remove_approved_tests")
-    def test_command_project_id_override_config(self, mock_remove, mock_approve, mock_find, mock_get_project):
+    def test_command_project_id_override_config(self, mock_remove, _mock_approve, mock_find, mock_get_project):
         """Test that command line project ID overrides config file"""
         # Arrange
         cli_project_id = "CLI_PROJECT"

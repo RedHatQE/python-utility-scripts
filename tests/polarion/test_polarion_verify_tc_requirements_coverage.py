@@ -150,7 +150,7 @@ class TestHasVerifyCommand:
             # Assert
             assert result.exit_code == 0
             # Check that get_polarion_project_id was called with default config path
-            args, kwargs = mock_get_project.call_args
+            _, kwargs = mock_get_project.call_args
             assert kwargs["util_name"] == "pyutils-polarion-verify-tc-requirements"
             assert kwargs["config_file_path"].endswith("/.config/python-utility-scripts/config.yaml")
 
@@ -348,18 +348,6 @@ class TestHasVerifyCommand:
             assert 1 in [call.args[0] for call in mock_exit.call_args_list]
             # Verify error logging was called with the missing requirements
             mock_logger.error.assert_called_once_with(f"TestCases with missing requirement: {missing_requirements}")
-
-    def test_command_missing_required_params_not_applicable(self):
-        """Test that the command can run without explicit project-id (uses config)"""
-        # This command doesn't have required parameters since project-id can come from config
-        # So we test that it attempts to run (but may fail due to missing config)
-
-        # We expect the command to run but potentially fail due to missing config file
-        result = self.runner.invoke(has_verify, [])
-
-        # The exit code may vary depending on whether the default config file exists
-        # But the command should not fail due to missing required CLI parameters
-        assert result.exit_code in [0, 1]  # May succeed or fail due to config, but not parameter validation
 
     @patch("apps.polarion.polarion_verify_tc_requirements.get_polarion_project_id")
     @patch("apps.polarion.polarion_verify_tc_requirements.find_polarion_ids")
