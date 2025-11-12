@@ -6,7 +6,6 @@ This file provides extensive test coverage to improve overall test coverage.
 from __future__ import annotations
 
 import logging
-import sys
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -61,7 +60,7 @@ class TestHasVerifyCommand:
         mock_validate.return_value = ["TEST-001"]  # Has missing requirements
 
         # Act
-        result = self.runner.invoke(
+        self.runner.invoke(
             has_verify,
             ["--project-id", "TEST_PROJECT"],
         )
@@ -286,7 +285,7 @@ class TestHasVerifyCommand:
         mock_validate.return_value = ["TEST-001", "TEST-003"]  # Multiple missing requirements
 
         # Act
-        result = self.runner.invoke(
+        self.runner.invoke(
             has_verify,
             ["--project-id", "TEST_PROJECT"],
         )
@@ -338,7 +337,7 @@ class TestHasVerifyCommand:
 
         with patch("apps.polarion.polarion_verify_tc_requirements.LOGGER") as mock_logger:
             # Act
-            result = self.runner.invoke(
+            self.runner.invoke(
                 has_verify,
                 ["--project-id", "TEST_PROJECT"],
             )
@@ -377,7 +376,7 @@ class TestHasVerifyCommand:
         with patch("apps.polarion.polarion_verify_tc_requirements.LOGGER") as mock_logger:
             with patch("sys.exit") as mock_exit:
                 # Act
-                result = self.runner.invoke(
+                self.runner.invoke(
                     has_verify,
                     ["--project-id", "TEST_PROJECT", "--verbose"],
                 )
