@@ -816,13 +816,16 @@ sdist = { url = "https://files.pythonhosted.org/packages/8b/d0/00161ed607273db4c
 
 [[package]]
 name = "pylero"
-version = "0.1.1"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "suds" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/88/38/0c0ccaafbb8594cf50af8d2376a5afee9e7279b7715a928558e7b52eb6f6/pylero-0.1.1.tar.gz", hash = "sha256:de0ccd37da69e50993fe403eca5d093d70c57319640d6af6403ab9a3496ae16c", size = 309121, upload-time = "2025-05-30T13:38:52.34Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/93/a3/04efbc25a706d04d9d12cc5346b9ade9326d322496556eb07fa86b8cd3d5/pylero-0.2.0.tar.gz", hash = "sha256:534e86667e318ac353d24d041229d3f821316e0f3b659f2fd050adfcd4f3472f", size = 486274, upload-time = "2025-12-19T15:17:13.281Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ce/24/d26a5582611ba222c2f36cbd06736af106e424776bb54277f93407672926/pylero-0.2.0-py3-none-any.whl", hash = "sha256:3fd52d56fa11b8f77313681523b2b90ab986d34cc504aa6ce846510e732a2894", size = 101341, upload-time = "2025-12-19T15:17:11.685Z" },
+]
 
 [[package]]
 name = "pynacl"
@@ -964,7 +967,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.7" },
     { name = "jira", specifier = ">=3.6.0,<4" },
     { name = "pyhelper-utils", specifier = ">=2,<3" },
-    { name = "pylero", specifier = ">=0.1.0,<0.2" },
+    { name = "pylero", specifier = ">=0.2,<0.3" },
     { name = "pytest-mock", specifier = ">=3.14.0,<4" },
     { name = "python-simple-logger", specifier = ">=2.0.3,<3" },
     { name = "pyyaml", specifier = ">=6.0.1,<7" },
