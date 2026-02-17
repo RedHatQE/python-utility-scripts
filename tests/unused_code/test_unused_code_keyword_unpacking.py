@@ -34,7 +34,6 @@ def get_config():
     mocker.patch("apps.unused_code.unused_code._git_grep", side_effect=_mock_grep)
 
     result = process_file(py_file=str(py_file), func_ignore_prefix=[], file_ignore_list=[])
-    # Should not report the function as unused since it's used in keyword unpacking
     assert result == ""
 
 
@@ -61,7 +60,6 @@ def helper_function():
     mocker.patch("apps.unused_code.unused_code._git_grep", side_effect=_mock_grep)
 
     result = process_file(py_file=str(py_file), func_ignore_prefix=[], file_ignore_list=[])
-    # Should NOT report as unused because helper_function() is being called in the definition
     assert result == ""
 
 
@@ -88,7 +86,6 @@ def config_helper():
     mocker.patch("apps.unused_code.unused_code._git_grep", side_effect=_mock_grep)
 
     result = process_file(py_file=str(py_file), func_ignore_prefix=[], file_ignore_list=[])
-    # Should report as unused because usage is commented out
     assert "Is not used anywhere in the code." in result
 
 
@@ -119,7 +116,6 @@ def doc_function():
     mocker.patch("apps.unused_code.unused_code._git_grep", side_effect=_mock_grep)
 
     result = process_file(py_file=str(py_file), func_ignore_prefix=[], file_ignore_list=[])
-    # Should report as unused because usage is in documentation
     assert "Is not used anywhere in the code." in result
 
 
@@ -154,7 +150,6 @@ def main():
         ["--file-path", str(py_file)],
     )
     assert result.exit_code == 1
-    # Should not report get_config or get_defaults as unused
     assert "get_config" not in result.output
     assert "get_defaults" not in result.output
     assert "Is not used anywhere in the code." in result.output
