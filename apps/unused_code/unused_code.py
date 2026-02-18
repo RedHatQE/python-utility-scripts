@@ -131,6 +131,22 @@ def _build_fixture_param_pattern(function_name: str) -> str:
     return rf"\<{function_name}\>[[:space:]]*[,:]"
 
 
+def _build_keyword_unpacking_pattern(function_name: str) -> str:
+    r"""Build a portable regex to find keyword unpacking usage (**function_name()).
+
+    This pattern is designed to match patterns like **func_name() in function calls or dictionaries.
+    Uses word boundary semantics based on the detected grep engine.
+    - PCRE (-P):    \*\*function_name\s*\(
+    - Basic (-G):   \*\*function_name[[:space:]]*\(
+    """
+    flag = _detect_supported_grep_flag()
+    if flag == "-P":
+        # Match ** followed by function name followed by optional whitespace and opening parenthesis
+        return rf"\*\*{function_name}\s*\("
+    # For -G (basic regex), escape the asterisks and use POSIX classes
+    return rf"\*\*{function_name}[[:space:]]*\("
+
+
 def _is_pytest_mark_usefixtures_call(call_node: ast.Call) -> bool:
     """Check if an AST Call node represents pytest.mark.usefixtures(...)."""
     if isinstance(call_node.func, ast.Attribute):
@@ -334,7 +350,7 @@ def _is_documentation_pattern(line: str, function_name: str) -> bool:
 
     # Pattern 4: Check for common docstring patterns
     # Lines that start with common documentation patterns
-    doc_starters = ['"""', "'''", "# ", "## ", "### ", "*", "-", "•"]
+    doc_starters = ['"""', "'''", "# ", "## ", "### ", "-", "•"]
     if any(stripped_line.startswith(starter) for starter in doc_starters):
         if f"{function_name}(" in stripped_line:
             return True
@@ -486,6 +502,30 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
             # If we are here, it's a valid usage.
             used = True
             break
+
+        # If not found with general pattern, check for keyword unpacking usage (**func_name())
+        if not used:
+            for entry in _git_grep(
+                pattern=_build_keyword_unpacking_pattern(function_name=func.name), file_path=py_file
+            ):
+                LOGGER.debug(f"Checking {entry} function: {func.name}")
+                parts = entry.split(":", 2)
+                if len(parts) != 3:
+                    continue
+                _, _, _line = parts
+
+                # Filter out documentation patterns that aren't actual function calls
+                if _is_documentation_pattern(line=_line, function_name=func.name):
+                    LOGGER.debug(f"Skipping doc pattern {entry} function: {func.name}")
+                    continue
+
+                # Ignore commented lines (full line or inline)
+                if _line.strip().startswith("#"):
+                    continue
+
+                # If we find keyword unpacking usage, mark as used
+                used = True
+                break
 
         # If not found and it's a pytest fixture, check all fixture usage patterns
         if not used and is_pytest_fixture(func=func):
