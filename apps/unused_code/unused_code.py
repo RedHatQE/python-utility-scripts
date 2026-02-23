@@ -47,9 +47,9 @@ def _detect_supported_grep_flag() -> str:
             result = subprocess.run(probe_cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if result.returncode in (0, 1):
                 return flag
-        except Exception:
+        except OSError:
             # Try next candidate
-            pass
+            LOGGER.debug(f"git grep flag {flag!r} probe failed, trying next candidate")
 
     raise RuntimeError(
         "git grep does not support '-P' (PCRE) or '-G' (basic regex) on this platform. "
@@ -63,11 +63,15 @@ def is_fixture_autouse(func: ast.FunctionDef) -> bool:
         if not hasattr(deco, "func"):
             continue
 
-        if getattr(deco.func, "attr", None) and getattr(deco.func, "value", None):
-            if deco.func.attr == "fixture" and deco.func.value.id == "pytest":
-                for _key in deco.keywords:
-                    if _key.arg == "autouse":
-                        return True
+        if (
+            getattr(deco.func, "attr", None)
+            and getattr(deco.func, "value", None)
+            and deco.func.attr == "fixture"
+            and deco.func.value.id == "pytest"
+        ):
+            for _key in deco.keywords:
+                if _key.arg == "autouse":
+                    return True
     return False
 
 
@@ -81,18 +85,25 @@ def is_pytest_fixture(func: ast.FunctionDef) -> bool:
         # Case 1: @pytest.fixture(...)
         if hasattr(decorator, "func"):
             # e.g. @pytest.fixture(...)
-            if getattr(decorator.func, "attr", None) and getattr(decorator.func, "value", None):
-                if decorator.func.attr == "fixture" and getattr(decorator.func.value, "id", None) == "pytest":
-                    return True
+            if (
+                getattr(decorator.func, "attr", None)
+                and getattr(decorator.func, "value", None)
+                and decorator.func.attr == "fixture"
+                and getattr(decorator.func.value, "id", None) == "pytest"
+            ):
+                return True
             # e.g. from pytest import fixture; @fixture(...)
             if isinstance(decorator.func, ast.Name) and decorator.func.id == "fixture":
                 return True
         # Case 2: @pytest.fixture (no parentheses)
         else:
             # e.g. @pytest.fixture
-            if getattr(decorator, "attr", None) == "fixture" and getattr(decorator, "value", None):
-                if getattr(decorator.value, "id", None) == "pytest":
-                    return True
+            if (
+                getattr(decorator, "attr", None) == "fixture"
+                and getattr(decorator, "value", None)
+                and getattr(decorator.value, "id", None) == "pytest"
+            ):
+                return True
             # e.g. from pytest import fixture; @fixture
             if isinstance(decorator, ast.Name) and decorator.id == "fixture":
                 return True
@@ -150,17 +161,14 @@ def _build_keyword_unpacking_pattern(function_name: str) -> str:
 
 def _is_pytest_mark_usefixtures_call(call_node: ast.Call) -> bool:
     """Check if an AST Call node represents pytest.mark.usefixtures(...)."""
-    if isinstance(call_node.func, ast.Attribute):
-        # Handle pytest.mark.usefixtures
-        if (
-            call_node.func.attr == "usefixtures"
-            and isinstance(call_node.func.value, ast.Attribute)
-            and call_node.func.value.attr == "mark"
-            and isinstance(call_node.func.value.value, ast.Name)
-            and call_node.func.value.value.id == "pytest"
-        ):
-            return True
-    return False
+    return (
+        isinstance(call_node.func, ast.Attribute)
+        and call_node.func.attr == "usefixtures"
+        and isinstance(call_node.func.value, ast.Attribute)
+        and call_node.func.value.attr == "mark"
+        and isinstance(call_node.func.value.value, ast.Name)
+        and call_node.func.value.value.id == "pytest"
+    )
 
 
 def _check_fixturenames_insert_pattern(fixture_name: str, file_path: str) -> bool:
@@ -174,26 +182,26 @@ def _check_fixturenames_insert_pattern(fixture_name: str, file_path: str) -> boo
             content = f.read()
 
         tree = parse(source=content)
-
-        # Look for method calls like item.fixturenames.insert(...)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                # Check for attribute calls like item.fixturenames.insert
-                if (
-                    isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "insert"
-                    and isinstance(node.func.value, ast.Attribute)
-                    and node.func.value.attr == "fixturenames"
-                ):
-                    # Check the arguments for our fixture name
-                    for arg in node.args:
-                        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                            if arg.value == fixture_name:
-                                return True
-
-        return False
     except (FileNotFoundError, SyntaxError, ValueError):
         return False
+
+    # Look for method calls like item.fixturenames.insert(...)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        # Check for attribute calls like item.fixturenames.insert
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "insert"
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "fixturenames"
+        ):
+            # Check the arguments for our fixture name
+            for arg in node.args:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and arg.value == fixture_name:
+                    return True
+
+    return False
 
 
 def _check_getfixturevalue_pattern(fixture_name: str, file_path: str) -> bool:
@@ -208,31 +216,31 @@ def _check_getfixturevalue_pattern(fixture_name: str, file_path: str) -> bool:
             content = f.read()
 
         tree = parse(source=content)
-
-        # Look for method calls like request.getfixturevalue(...)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                # Check for attribute calls like request.getfixturevalue
-                if isinstance(node.func, ast.Attribute) and node.func.attr == "getfixturevalue":
-                    # Check positional arguments
-                    for arg in node.args:
-                        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                            if arg.value == fixture_name:
-                                return True
-
-                    # Check keyword arguments (argname="fixture_name")
-                    for keyword in node.keywords:
-                        if keyword.arg == "argname":
-                            if (
-                                isinstance(keyword.value, ast.Constant)
-                                and isinstance(keyword.value.value, str)
-                                and keyword.value.value == fixture_name
-                            ):
-                                return True
-
-        return False
     except (FileNotFoundError, SyntaxError, ValueError):
         return False
+
+    # Look for method calls like request.getfixturevalue(...)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        # Check for attribute calls like request.getfixturevalue
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "getfixturevalue":
+            # Check positional arguments
+            for arg in node.args:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and arg.value == fixture_name:
+                    return True
+
+            # Check keyword arguments (argname="fixture_name")
+            for keyword in node.keywords:
+                if (
+                    keyword.arg == "argname"
+                    and isinstance(keyword.value, ast.Constant)
+                    and isinstance(keyword.value.value, str)
+                    and keyword.value.value == fixture_name
+                ):
+                    return True
+
+    return False
 
 
 def _is_usefixtures_context(file_path: str, line_number: str, fixture_name: str) -> bool:
@@ -247,55 +255,59 @@ def _is_usefixtures_context(file_path: str, line_number: str, fixture_name: str)
         # Parse the AST of the file
         tree = parse(source=content)
         target_line = int(line_number)
+    except (FileNotFoundError, SyntaxError, ValueError):
+        return False
 
-        # Look for pytest.mark.usefixtures calls that span the target line
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                # Check if the value is a call to pytest.mark.usefixtures
-                if isinstance(node.value, ast.Call):
-                    if _is_pytest_mark_usefixtures_call(node.value):
+    # Look for pytest.mark.usefixtures calls that span the target line
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            # Check if the value is a call to pytest.mark.usefixtures
+            if isinstance(node.value, ast.Call) and _is_pytest_mark_usefixtures_call(node.value):
+                # Check if the target line is within this call's range
+                call_start = node.value.lineno
+                call_end = node.value.end_lineno or call_start
+
+                if call_start <= target_line <= call_end:
+                    # Check if any of the arguments contain our fixture name
+                    for arg in node.value.args:
+                        if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and arg.value == fixture_name:
+                            return True
+
+            # Also check if the value is a list containing pytest.mark.usefixtures calls
+            elif isinstance(node.value, ast.List):
+                for element in node.value.elts:
+                    if isinstance(element, ast.Call) and _is_pytest_mark_usefixtures_call(element):
                         # Check if the target line is within this call's range
-                        call_start = node.value.lineno
-                        call_end = node.value.end_lineno or call_start
+                        call_start = element.lineno
+                        call_end = element.end_lineno or call_start
 
                         if call_start <= target_line <= call_end:
                             # Check if any of the arguments contain our fixture name
-                            for arg in node.value.args:
-                                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                                    if arg.value == fixture_name:
-                                        return True
+                            for arg in element.args:
+                                if (
+                                    isinstance(arg, ast.Constant)
+                                    and isinstance(arg.value, str)
+                                    and arg.value == fixture_name
+                                ):
+                                    return True
 
-                # Also check if the value is a list containing pytest.mark.usefixtures calls
-                elif isinstance(node.value, ast.List):
-                    for element in node.value.elts:
-                        if isinstance(element, ast.Call) and _is_pytest_mark_usefixtures_call(element):
-                            # Check if the target line is within this call's range
-                            call_start = element.lineno
-                            call_end = element.end_lineno or call_start
+        # Also check decorators
+        elif isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            for decorator in node.decorator_list:
+                if isinstance(decorator, ast.Call) and _is_pytest_mark_usefixtures_call(decorator):
+                    call_start = decorator.lineno
+                    call_end = decorator.end_lineno or call_start
 
-                            if call_start <= target_line <= call_end:
-                                # Check if any of the arguments contain our fixture name
-                                for arg in element.args:
-                                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                                        if arg.value == fixture_name:
-                                            return True
+                    if call_start <= target_line <= call_end:
+                        for arg in decorator.args:
+                            if (
+                                isinstance(arg, ast.Constant)
+                                and isinstance(arg.value, str)
+                                and arg.value == fixture_name
+                            ):
+                                return True
 
-            # Also check decorators
-            elif isinstance(node, (ast.FunctionDef, ast.ClassDef)):
-                for decorator in node.decorator_list:
-                    if isinstance(decorator, ast.Call) and _is_pytest_mark_usefixtures_call(decorator):
-                        call_start = decorator.lineno
-                        call_end = decorator.end_lineno or call_start
-
-                        if call_start <= target_line <= call_end:
-                            for arg in decorator.args:
-                                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                                    if arg.value == fixture_name:
-                                        return True
-
-        return False
-    except (FileNotFoundError, SyntaxError, ValueError):
-        return False
+    return False
 
 
 def _is_documentation_pattern(line: str, function_name: str) -> bool:
@@ -352,11 +364,7 @@ def _is_documentation_pattern(line: str, function_name: str) -> bool:
     # Pattern 4: Check for common docstring patterns
     # Lines that start with common documentation patterns
     doc_starters = ['"""', "'''", "# ", "## ", "### ", "-", "•"]
-    if any(stripped_line.startswith(starter) for starter in doc_starters):
-        if f"{function_name}(" in stripped_line:
-            return True
-
-    return False
+    return any(stripped_line.startswith(starter) for starter in doc_starters) and f"{function_name}(" in stripped_line
 
 
 def _find_git_root(file_path: str) -> str:
@@ -437,10 +445,7 @@ def is_ignore_function_list(ignore_prefix_list: list[str], function: ast.Functio
     ignore_function_lists = [
         function.name for ignore_prefix in ignore_prefix_list if function.name.startswith(ignore_prefix)
     ]
-    if ignore_function_lists:
-        return True
-
-    return False
+    return bool(ignore_function_lists)
 
 
 def _resolve_absolute_path(git_grep_path: str, reference_file: str) -> str:
@@ -494,7 +499,7 @@ def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: 
 
             # Ignore commented lines (full line or inline)
             code_part = _line.split("#", 1)[0]
-            if code_part.startswith("import") or code_part.startswith("from"):
+            if code_part.startswith(("import", "from")):
                 continue
 
             if func.name not in code_part:
@@ -664,7 +669,7 @@ def get_unused_functions(
                 try:
                     if unused_func := future.result():
                         unused_functions.append(unused_func)
-                except Exception as exc:
+                except (OSError, RuntimeError, SyntaxError, ValueError) as exc:
                     processing_errors.append(f"{jobs[future]}: {exc}")
 
             if processing_errors:

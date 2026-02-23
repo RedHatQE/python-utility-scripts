@@ -182,8 +182,7 @@ def unused_code_function_with_legitimate_calls():
     unused_code_create_secret()
 
     if unused_code_validate_namespace():
-        deploy_result = unused_code_deploy_app()
-        return deploy_result
+        return unused_code_deploy_app()
 
     return result
 

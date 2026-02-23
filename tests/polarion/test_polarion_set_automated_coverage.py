@@ -303,31 +303,33 @@ class TestPolarionApproveAutomateCommand:
         mock_find.return_value = []
         mock_remove.return_value = {"updated": [], "failed": []}
 
-        with patch("apps.polarion.polarion_set_automated.LOGGER") as mock_logger:
-            with patch("logging.getLogger") as mock_get_logger:
-                mock_utils_logger = MagicMock()
-                mock_get_logger.return_value = mock_utils_logger
+        with (
+            patch("apps.polarion.polarion_set_automated.LOGGER") as mock_logger,
+            patch("logging.getLogger") as mock_get_logger,
+        ):
+            mock_utils_logger = MagicMock()
+            mock_get_logger.return_value = mock_utils_logger
 
-                # Act
-                result = self.runner.invoke(
-                    polarion_approve_automate,
-                    [
-                        "--previous-commit",
-                        "abc123",
-                        "--current-commit",
-                        "def456",
-                        "--project-id",
-                        "TEST_PROJECT",
-                        "--verbose",
-                    ],
-                )
+            # Act
+            result = self.runner.invoke(
+                polarion_approve_automate,
+                [
+                    "--previous-commit",
+                    "abc123",
+                    "--current-commit",
+                    "def456",
+                    "--project-id",
+                    "TEST_PROJECT",
+                    "--verbose",
+                ],
+            )
 
-                # Assert
-                assert result.exit_code == 0
-                # Verify logging level was set
-                mock_logger.setLevel.assert_called_with(logging.DEBUG)
-                mock_get_logger.assert_called_with("apps.polarion.polarion_utils")
-                mock_utils_logger.setLevel.assert_called_with(logging.DEBUG)
+            # Assert
+            assert result.exit_code == 0
+            # Verify logging level was set
+            mock_logger.setLevel.assert_called_with(logging.DEBUG)
+            mock_get_logger.assert_called_with("apps.polarion.polarion_utils")
+            mock_utils_logger.setLevel.assert_called_with(logging.DEBUG)
 
     @patch("apps.polarion.polarion_set_automated.get_polarion_project_id")
     def test_command_uses_config_file_project_id(self, mock_get_project):
