@@ -6,10 +6,11 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable, Iterable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any
 
 import click
 from ast_comments import parse
