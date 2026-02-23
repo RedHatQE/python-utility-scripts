@@ -122,7 +122,7 @@ def get_jira_information(
                 jira_fix_versions = ",".join([jira_fix_version.name for jira_fix_version in jira_fix_versions])
                 current_target_versions = re.findall(re_compile, jira_fix_versions)
 
-            if any([version in jira_target_versions for version in current_target_versions]):
+            if any(version in jira_target_versions for version in current_target_versions):
                 return file_name, jira_error_string
 
             else:

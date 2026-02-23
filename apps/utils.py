@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any
 
 import click
 import yaml
@@ -11,7 +12,7 @@ from simple_logger.logger import get_logger
 LOGGER = get_logger(name=__name__)
 
 
-def get_util_config(util_name: str, config_file_path: Optional[str] = None) -> Dict[str, Any]:
+def get_util_config(util_name: str, config_file_path: str | None = None) -> dict[str, Any]:
     if config_file_path and os.path.exists(config_file_path):
         with open(config_file_path) as _file:
             return yaml.safe_load(_file).get(util_name, {})

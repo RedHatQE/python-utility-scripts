@@ -9,12 +9,10 @@ to test the false positive detection capabilities of unused_code.py.
 # Original functions for existing tests compatibility
 def unused_code_check_fail() -> None:
     """Original function for compatibility with existing tests."""
-    pass
 
 
 def unused_code_check_file() -> None:
     """Original function for compatibility with existing tests."""
-    pass
 
 
 def unused_code_namespace():
@@ -156,7 +154,6 @@ def unused_code_some_other_function():
     Returns:
         str: The created namespace name.
     """
-    pass
 
 
 def unused_code_edge_case_function():
@@ -172,7 +169,6 @@ def unused_code_edge_case_function():
     Returns:
         None
     """
-    pass
 
 
 def unused_code_function_with_legitimate_calls():
@@ -186,8 +182,7 @@ def unused_code_function_with_legitimate_calls():
     unused_code_create_secret()
 
     if unused_code_validate_namespace():
-        deploy_result = unused_code_deploy_app()
-        return deploy_result
+        return unused_code_deploy_app()
 
     return result
 
@@ -215,4 +210,4 @@ def unused_code_unused_function_with_docs():
 
 def unused_code_skip_with_comment() -> None:
     """Function that should be skipped due to comment."""
-    pass  # skip-unused-code
+    # skip-unused-code

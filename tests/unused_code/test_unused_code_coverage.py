@@ -151,9 +151,9 @@ def test_is_documentation_pattern(line, is_doc):
 def test_git_grep_error(mocker):
     mocker.patch(
         "apps.unused_code.unused_code.subprocess.run",
-        side_effect=Exception("git error"),
+        side_effect=RuntimeError("git error"),
     )
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError):
         _git_grep("pattern")
 
 
