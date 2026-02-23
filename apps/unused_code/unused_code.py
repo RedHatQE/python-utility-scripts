@@ -47,7 +47,7 @@ def _detect_supported_grep_flag() -> str:
             result = subprocess.run(probe_cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if result.returncode in (0, 1):
                 return flag
-        except OSError:
+        except (OSError, subprocess.SubprocessError):
             # Try next candidate
             LOGGER.debug(f"git grep flag {flag!r} probe failed, trying next candidate")
 
@@ -669,7 +669,7 @@ def get_unused_functions(
                 try:
                     if unused_func := future.result():
                         unused_functions.append(unused_func)
-                except (OSError, RuntimeError, SyntaxError, ValueError) as exc:
+                except Exception as exc:  # noqa: BLE001
                     processing_errors.append(f"{jobs[future]}: {exc}")
 
             if processing_errors:
