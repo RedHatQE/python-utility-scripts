@@ -146,14 +146,22 @@ def process_jira_command_line_config_file(
     version_string_not_targeted_jiras: str,
     target_versions: list[str],
     skip_projects: list[str],
+    user: str,
+    cloud: bool | None,
 ) -> dict[str, Any]:
     # Process all the arguments passed from command line or config file or environment variable
     config_dict = get_util_config(util_name="pyutils-jira", config_file_path=config_file_path)
     url = url or config_dict.get("url", "")
     token = token or config_dict.get("token", "")
+    user = user or config_dict.get("user", "")
+    cloud = cloud if cloud is not None else config_dict.get("cloud", False)
 
     if not (url and token):
         LOGGER.error("Jira url and token are required.")
+        sys.exit(1)
+
+    if cloud and not user:
+        LOGGER.error("Jira user is required for cloud Jira.")
         sys.exit(1)
 
     return {
@@ -166,6 +174,8 @@ def process_jira_command_line_config_file(
         ),
         "target_versions": target_versions or config_dict.get("target_versions", []),
         "skip_project_ids": skip_projects or config_dict.get("skip_project_ids", []),
+        "user": user,
+        "cloud": cloud,
     }
 
 
@@ -198,6 +208,12 @@ def process_jira_command_line_config_file(
     default=os.getenv("JIRA_TOKEN"),
 )
 @click.option(
+    "--user",
+    help="Provide the Jira user email (required for cloud Jira).",
+    type=click.STRING,
+    default=os.getenv("JIRA_USER"),
+)
+@click.option(
     "--issue-pattern",
     help="Provide the regex for Jira ids",
     type=click.STRING,
@@ -219,16 +235,24 @@ def process_jira_command_line_config_file(
     default="vfuture",
 )
 @click.option("--verbose", default=False, is_flag=True)
+@click.option(
+    "--cloud",
+    help="Use cloud Jira authentication (basic_auth with user email and API token).",
+    is_flag=True,
+    default=None,
+)
 def get_jira_mismatch(
     config_file_path: str,
     target_versions: list[str],
     url: str,
     token: str,
+    user: str,
     skip_projects: list[str],
     resolved_statuses: list[str],
     issue_pattern: str,
     version_string_not_targeted_jiras: str,
     verbose: bool,
+    cloud: bool | None,
 ) -> None:
     LOGGER.setLevel(logging.DEBUG if verbose else logging.INFO)
     if not (config_file_path or (token and url)):
@@ -245,12 +269,20 @@ def get_jira_mismatch(
         skip_projects=skip_projects,
         version_string_not_targeted_jiras=version_string_not_targeted_jiras,
         target_versions=target_versions,
+        user=user,
+        cloud=cloud,
     )
 
-    jira_obj = JIRA(
-        token_auth=jira_config_dict["token"],
-        options={"server": jira_config_dict["url"]},
-    )
+    if jira_config_dict["cloud"]:
+        jira_obj = JIRA(
+            server=jira_config_dict["url"],
+            basic_auth=(jira_config_dict["user"], jira_config_dict["token"]),
+        )
+    else:
+        jira_obj = JIRA(
+            token_auth=jira_config_dict["token"],
+            options={"server": jira_config_dict["url"]},
+        )
     jira_error: dict[str, str] = {}
 
     if jira_id_dict := get_jiras_from_python_files(

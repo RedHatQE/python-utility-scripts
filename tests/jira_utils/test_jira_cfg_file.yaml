@@ -1,6 +1,8 @@
 pyutils-jira:
   url: "https://example.com"
   token: ""
+  user: "test@example.com"
+  cloud: false
   resolved_statuses:
   - "RESOLVED"
   issue_pattern: "*"

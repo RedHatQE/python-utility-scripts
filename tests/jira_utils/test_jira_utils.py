@@ -49,6 +49,8 @@ def test_process_jira_command_line_config_file_valid_config(mocker):
             "version_string_not_targeted_jiras": version_string_not_targeted_jiras,
             "target_versions": target_versions,
             "skip_project_ids": skip_projects,
+            "user": "",
+            "cloud": False,
         },
     )
     result = process_jira_command_line_config_file(
@@ -60,6 +62,8 @@ def test_process_jira_command_line_config_file_valid_config(mocker):
         version_string_not_targeted_jiras,
         target_versions,
         skip_projects,
+        user="",
+        cloud=False,
     )
     assert result == {
         "url": url,
@@ -69,8 +73,193 @@ def test_process_jira_command_line_config_file_valid_config(mocker):
         "not_targeted_version_str": version_string_not_targeted_jiras,
         "target_versions": target_versions,
         "skip_project_ids": skip_projects,
+        "user": "",
+        "cloud": False,
     }
     mock_get_util_config.assert_called_once()
+
+
+def test_process_jira_command_line_config_file_cloud_valid(mocker):
+    config_file_path = "/path/to/config"
+    url = "https://example.com"
+    token = "1234567890"
+    user = "test@example.com"
+
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={
+            "url": url,
+            "token": token,
+            "cloud": True,
+            "user": user,
+        },
+    )
+    result = process_jira_command_line_config_file(
+        config_file_path=config_file_path,
+        url=url,
+        token=token,
+        issue_pattern="*",
+        resolved_statuses=["RESOLVED"],
+        version_string_not_targeted_jiras="v1.*",
+        target_versions=["v2"],
+        skip_projects=[],
+        user=user,
+        cloud=True,
+    )
+    assert result["cloud"] is True
+    assert result["user"] == user
+
+
+def test_process_jira_command_line_config_file_cloud_missing_user(mocker):
+    config_file_path = "/path/to/config"
+    url = "https://example.com"
+    token = "1234567890"
+
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={
+            "url": url,
+            "token": token,
+        },
+    )
+    with pytest.raises(SystemExit):
+        process_jira_command_line_config_file(
+            config_file_path=config_file_path,
+            url=url,
+            token=token,
+            issue_pattern="*",
+            resolved_statuses=["RESOLVED"],
+            version_string_not_targeted_jiras="v1.*",
+            target_versions=["v2"],
+            skip_projects=[],
+            user="",
+            cloud=True,
+        )
+
+
+def test_process_cloud_from_config_when_cli_not_passed(mocker):
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={"url": "https://example.com", "token": "tok", "cloud": True, "user": "u@e.com"},
+    )
+    result = process_jira_command_line_config_file(
+        config_file_path="/path",
+        url="https://example.com",
+        token="tok",
+        issue_pattern="*",
+        resolved_statuses=[],
+        version_string_not_targeted_jiras="",
+        target_versions=[],
+        skip_projects=[],
+        user="u@e.com",
+        cloud=None,
+    )
+    assert result["cloud"] is True
+    assert result["user"] == "u@e.com"
+
+
+def test_process_cloud_defaults_false_when_not_in_config(mocker):
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={"url": "https://example.com", "token": "tok"},
+    )
+    result = process_jira_command_line_config_file(
+        config_file_path="/path",
+        url="https://example.com",
+        token="tok",
+        issue_pattern="*",
+        resolved_statuses=[],
+        version_string_not_targeted_jiras="",
+        target_versions=[],
+        skip_projects=[],
+        user="",
+        cloud=None,
+    )
+    assert result["cloud"] is False
+
+
+def test_process_cloud_from_config_missing_user_exits(mocker):
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={"url": "https://example.com", "token": "tok", "cloud": True},
+    )
+    with pytest.raises(SystemExit):
+        process_jira_command_line_config_file(
+            config_file_path="/path",
+            url="https://example.com",
+            token="tok",
+            issue_pattern="*",
+            resolved_statuses=[],
+            version_string_not_targeted_jiras="",
+            target_versions=[],
+            skip_projects=[],
+            user="",
+            cloud=None,
+        )
+
+
+def test_process_user_from_config_fallback(mocker):
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={"url": "https://example.com", "token": "tok", "user": "config@example.com", "cloud": True},
+    )
+    result = process_jira_command_line_config_file(
+        config_file_path="/path",
+        url="https://example.com",
+        token="tok",
+        issue_pattern="*",
+        resolved_statuses=[],
+        version_string_not_targeted_jiras="",
+        target_versions=[],
+        skip_projects=[],
+        user="",
+        cloud=True,
+    )
+    assert result["user"] == "config@example.com"
+    assert result["cloud"] is True
+
+
+def test_process_cloud_false_explicit_ignores_config(mocker):
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={"url": "https://example.com", "token": "tok", "cloud": True},
+    )
+    result = process_jira_command_line_config_file(
+        config_file_path="/path",
+        url="https://example.com",
+        token="tok",
+        issue_pattern="*",
+        resolved_statuses=[],
+        version_string_not_targeted_jiras="",
+        target_versions=[],
+        skip_projects=[],
+        user="",
+        cloud=False,
+    )
+    assert result["cloud"] is False
+
+
+def test_process_server_mode_default(mocker):
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={"url": "https://example.com", "token": "tok"},
+    )
+    result = process_jira_command_line_config_file(
+        config_file_path="/path",
+        url="https://example.com",
+        token="tok",
+        issue_pattern="([A-Z]+-[0-9]+)",
+        resolved_statuses=["resolved"],
+        version_string_not_targeted_jiras="vfuture",
+        target_versions=[],
+        skip_projects=[],
+        user="",
+        cloud=False,
+    )
+    assert result["cloud"] is False
+    assert result["user"] == ""
+    assert result["url"] == "https://example.com"
+    assert result["token"] == "tok"
 
 
 @pytest.mark.parametrize(
