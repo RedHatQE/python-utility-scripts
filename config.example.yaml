@@ -12,6 +12,8 @@ pyutils-polarion-set-automated:
 pyutils-jira:
   url: <jira url>
   token: <jira token>
+  user: <jira user email>
+  cloud: false
   resolved_statuses:
   - verified
   - release pending
