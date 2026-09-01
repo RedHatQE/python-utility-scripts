@@ -74,6 +74,6 @@ pyutils-unusedcode --exclude-files 'my_exclude_file1.py,my_exclude_file2.py'
 Add `# skip-unused-code` comment in the function name list to skip it from check.
 
 ```python
-def my_function(): # skip-unused-code
+def my_function():  # skip-unused-code
     pass
 ```

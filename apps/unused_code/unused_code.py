@@ -23,7 +23,7 @@ LOGGER = get_logger(name=__name__)
 
 @lru_cache(maxsize=1)
 def _detect_supported_grep_flag() -> str:
-    """Detect and cache a supported regex engine flag for git grep.
+    r"""Detect and cache a supported regex engine flag for git grep.
 
     Prefer PCRE ("-P") for proper \b handling; fall back to basic regex ("-G").
     Run a harmless grep to verify support and cache the first working flag.
