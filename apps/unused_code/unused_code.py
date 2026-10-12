@@ -8,53 +8,25 @@ import subprocess
 import sys
 from collections.abc import Callable, Iterable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 import click
 from ast_comments import parse
 from simple_logger.logger import get_logger
 
+from apps.git_grep_utils import (
+    detect_supported_grep_flag as _detect_supported_grep_flag,
+)
+from apps.git_grep_utils import (
+    find_git_root as _find_git_root,
+)
+from apps.git_grep_utils import (
+    resolve_absolute_path as _resolve_absolute_path,
+)
+from apps.git_grep_utils import wrap_grep_word
 from apps.utils import ListParamType, all_python_files, get_util_config
 
 LOGGER = get_logger(name=__name__)
-
-
-@lru_cache(maxsize=1)
-def _detect_supported_grep_flag() -> str:
-    r"""Detect and cache a supported regex engine flag for git grep.
-
-    Prefer PCRE ("-P") for proper \b handling; fall back to basic regex ("-G").
-    Run a harmless grep to verify support and cache the first working flag.
-    Uses lru_cache for thread-safe caching that runs only once per process.
-    """
-    candidate_flags = ["-P", "-G"]
-    for flag in candidate_flags:
-        try:
-            # Use a trivial pattern to minimize output. We only care that the flag is accepted.
-            # Discard stdout/stderr to prevent capturing large data in big repositories.
-            probe_cmd = [
-                "git",
-                "grep",
-                "-n",
-                "--no-color",
-                "--untracked",
-                "-I",
-                flag,
-                "^$",  # match empty lines; success (rc=0) or no matches (rc=1) are both fine
-            ]
-            result = subprocess.run(probe_cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if result.returncode in (0, 1):
-                return flag
-        except (OSError, subprocess.SubprocessError):
-            # Try next candidate
-            LOGGER.debug(f"git grep flag {flag!r} probe failed, trying next candidate")
-
-    raise RuntimeError(
-        "git grep does not support '-P' (PCRE) or '-G' (basic regex) on this platform. "
-        "Please ensure a compatible git/grep is installed."
-    )
 
 
 def is_fixture_autouse(func: ast.FunctionDef) -> bool:
@@ -111,19 +83,8 @@ def is_pytest_fixture(func: ast.FunctionDef) -> bool:
 
 
 def _build_usage_pattern(function_name: str) -> str:
-    r"""Build a portable regex to match function usages.
-
-    Uses word boundary semantics based on the detected grep engine.
-    The pattern is designed to match function calls as well as references
-    (e.g., when passed as an argument).
-    - PCRE (-P):    \bname\b
-    - Basic (-G):   \<name\>
-    """
-    flag = _detect_supported_grep_flag()
-    if flag == "-P":
-        return rf"\b{function_name}\b"
-    # -G basic regex: use word-start and word-end tokens
-    return rf"\<{function_name}\>"
+    """Build a portable regex to match a function name as a whole word."""
+    return wrap_grep_word(function_name, flag=_detect_supported_grep_flag())
 
 
 def _build_fixture_param_pattern(function_name: str) -> str:
@@ -367,26 +328,6 @@ def _is_documentation_pattern(line: str, function_name: str) -> bool:
     return any(stripped_line.startswith(starter) for starter in doc_starters) and f"{function_name}(" in stripped_line
 
 
-def _find_git_root(file_path: str) -> str:
-    """Find the git repository root for a given file path.
-
-    Args:
-        file_path: Path to a file within a git repository
-
-    Returns:
-        The git repository root path
-    """
-    path = Path(file_path).resolve().parent
-
-    while path != path.parent:  # Stop at filesystem root
-        if (path / ".git").exists():
-            return str(path)
-        path = path.parent
-
-    # Fallback to current directory (we know it's a git repo from the main check)
-    return os.getcwd()
-
-
 def _git_grep(pattern: str, file_path: str | None = None) -> list[str]:
     """Run git grep with a pattern and return matching lines.
 
@@ -446,14 +387,6 @@ def is_ignore_function_list(ignore_prefix_list: list[str], function: ast.Functio
         function.name for ignore_prefix in ignore_prefix_list if function.name.startswith(ignore_prefix)
     ]
     return bool(ignore_function_lists)
-
-
-def _resolve_absolute_path(git_grep_path: str, reference_file: str) -> str:
-    """Convert git grep path to absolute path if needed."""
-    if not os.path.isabs(git_grep_path):
-        git_root = _find_git_root(reference_file)
-        return os.path.join(git_root, git_grep_path)
-    return git_grep_path
 
 
 def process_file(py_file: str, func_ignore_prefix: list[str], file_ignore_list: list[str]) -> str:
