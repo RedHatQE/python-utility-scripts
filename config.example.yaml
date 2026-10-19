@@ -3,6 +3,15 @@ pyutils-unusedcode:
   - "my_exclude_file.py"
   exclude_function_prefix:
   - "my_exclude_function_prefix"
+pyutils-unusedconstants:
+  include_files:
+    - "utilities/constants.py"
+    - "tests/conftest.py"
+  exclude_files:
+    - "my_exclude_file.py"
+  exclude_names:
+    - "__all__"
+  uppercase_only: true
 pyutils-polarion-verify-tc-requirements:
   project_id: "ABCDEF"
   branch: "origin/main"
