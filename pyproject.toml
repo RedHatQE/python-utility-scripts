@@ -32,6 +32,7 @@ Documentation = "https://github.com/RedHatQE/python-utility-scripts/blob/main/RE
 
 [project.scripts]
 pyutils-unusedcode = "apps.unused_code.unused_code:get_unused_functions"
+pyutils-unusedconstants = "apps.unused_constants.unused_constants:get_unused_constants"
 pyutils-polarion-verify-tc-requirements = "apps.polarion.polarion_verify_tc_requirements:has_verify"
 pyutils-polarion-set-automated = "apps.polarion.polarion_set_automated:polarion_approve_automate"
 pyutils-jira = "apps.jira_utils.jira_information:get_jira_mismatch"

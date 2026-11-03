@@ -240,9 +240,11 @@ def test_is_usefixtures_context_class(tmp_path):
 
 
 def test_detect_supported_grep_flag_fallback(mocker):
-    apps.unused_code.unused_code._detect_supported_grep_flag.cache_clear()
+    from apps.git_grep_utils import detect_supported_grep_flag
+
+    detect_supported_grep_flag.cache_clear()
     mocker.patch(
-        "apps.unused_code.unused_code.subprocess.run",
+        "apps.git_grep_utils.subprocess.run",
         side_effect=[
             subprocess.CalledProcessError(1, "git"),
             subprocess.CalledProcessError(1, "git"),
@@ -454,25 +456,46 @@ def test_process_file_if_statement(tmp_path):
 
 
 def test_find_git_root(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    source = repo / "pkg" / "file.py"
+    source.parent.mkdir()
+    source.touch()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(outside)
+        assert _find_git_root(str(source)) == str(repo)
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_find_git_root_falls_back_to_cwd(tmp_path):
+    source = tmp_path / "file.py"
+    source.touch()
     original_cwd = os.getcwd()
     try:
         os.chdir(tmp_path)
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        assert str(tmp_path) == _find_git_root(str(tmp_path))
+        assert _find_git_root(str(source)) == os.getcwd()
     finally:
         os.chdir(original_cwd)
 
 
 def test_resolve_absolute_path(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    source = repo / "my_file.py"
+    source.touch()
+    outside = tmp_path / "outside"
+    outside.mkdir()
     original_cwd = os.getcwd()
     try:
-        os.chdir(tmp_path)
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        file_path = tmp_path / "my_file.py"
-        file_path.touch()
-        assert str(file_path) == _resolve_absolute_path("my_file.py", str(tmp_path))
+        os.chdir(outside)
+        assert str(source) == _resolve_absolute_path("my_file.py", str(source))
+        assert "/already/absolute.py" == _resolve_absolute_path("/already/absolute.py", str(source))
     finally:
         os.chdir(original_cwd)
 
