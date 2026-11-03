@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.11'",
@@ -1243,9 +1243,8 @@ sdist = { url = "https://files.pythonhosted.org/packages/f1/5b/e97b2209a7de9763c
 
 [[package]]
 name = "python-utility-scripts"
-version = "2.0.6"
+version = "2.0.7"
 source = { editable = "." }
-default-groups = ["dev", "test"]
 dependencies = [
     { name = "ast-comments" },
     { name = "click" },
