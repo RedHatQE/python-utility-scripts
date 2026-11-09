@@ -74,9 +74,12 @@ class ListParamType(click.ParamType):
                 )
 
 
-def all_python_files(directory: click.Path | None = None) -> Iterable[str]:
+def all_python_files(directory: str | click.Path | None = None) -> Iterable[str]:
     """
     Get all python files from current directory and subdirectories
+
+    `directory` is annotated to accept `str` as well: click.Path converts to a
+    string at parse time, so every caller already passes one.
     """
     exclude_dirs = [".tox", "venv", ".pytest_cache", "site-packages", ".git"]
     target = str(directory) if directory else os.path.abspath(os.curdir)
