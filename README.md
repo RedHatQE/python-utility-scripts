@@ -3,6 +3,7 @@
 Repository for various python utility scripts
 
 - [pyutils-unusedcode](https://github.com/RedHatQE/python-utility-scripts/blob/main/apps/unused_code/README.md)
+- [pyutils-unusedconstants](https://github.com/RedHatQE/python-utility-scripts/blob/main/apps/unused_constants/README.md)
 - [pyutils-polarion-verify-tc-requirements](https://github.com/RedHatQE/python-utility-scripts/blob/main/apps/polarion/README.md)
 - [pyutils-jira](https://github.com/RedHatQE/python-utility-scripts/blob/main/apps/jira_utils/README.md)
 - [pyutils-polarion-set-automated](https://github.com/RedHatQE/python-utility-scripts/blob/main/apps/polarion/README.md)
