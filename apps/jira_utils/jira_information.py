@@ -72,6 +72,36 @@ def _jira_browse_url(url: str) -> str:
     return "" if url.startswith(SA_GATEWAY_URL_PREFIX) else url
 
 
+def _mask_cloud_id(cloud_id: str) -> str:
+    """Return a fixed placeholder for `cloud_id`, never any part of the value itself.
+
+    Args:
+        cloud_id (str): Atlassian Cloud id; only its presence matters for the log line.
+
+    Returns:
+        str: The literal "<cloud-id>".
+    """
+    return "<cloud-id>"
+
+
+def _mask_server(server: str) -> str:
+    """Return `server` with the cloud id masked, for human-readable output only.
+
+    The real server url is still what the client talks to; masking applies to log lines and messages only.
+
+    Args:
+        server (str): Jira site url or API gateway url.
+
+    Returns:
+        str: `https://api.atlassian.com/ex/jira/<cloud-id>` for a gateway url (the cloud id is not echoed),
+            else `server` unchanged because a site url holds no cloud id.
+    """
+    if not server.startswith(SA_GATEWAY_URL_PREFIX):
+        return server
+
+    return f"{SA_GATEWAY_URL_PREFIX}{_mask_cloud_id(cloud_id=server.removeprefix(SA_GATEWAY_URL_PREFIX))}"
+
+
 def resolve_jira_server(url: str, cloud_id: str) -> str:
     """Resolve the Jira API server URL for the given url/cloud id.
 
@@ -309,7 +339,9 @@ def _report_jira_auth_error(exp: JIRAError, jira_config_dict: dict[str, Any]) ->
         url=jira_config_dict["url"], cloud=jira_config_dict["cloud"], cloud_id=jira_config_dict["cloud_id"]
     )
     detail = _error_detail(text=exp.text, token=jira_config_dict["token"])
-    LOGGER.error(f"Jira authentication failed (mode: {mode}, server: {server}): {exp.status_code} {detail}")
+    LOGGER.error(
+        f"Jira authentication failed (mode: {mode}, server: {_mask_server(server=server)}): {exp.status_code} {detail}"
+    )
     if exp.status_code in AUTH_ERROR_STATUS_CODES:
         LOGGER.error(_auth_failure_hint(mode=mode, oauth_service_account=bool(jira_config_dict.get("client_secret"))))
 
@@ -381,13 +413,14 @@ def _check_jira_auth(jira_obj: JIRA, jira_config_dict: dict[str, Any]) -> None:
 
     if myself is None:
         LOGGER.info(
-            f"Jira authentication OK - mode: {mode}, server: {server}, service account: project visibility "
-            "verified; the current-user endpoint (/myself) is unavailable for this credential's scopes"
+            f"Jira authentication OK - mode: {mode}, server: {_mask_server(server=server)}, service account: "
+            "project visibility verified; the current-user endpoint (/myself) is unavailable for this "
+            "credential's scopes"
         )
         return
 
     LOGGER.info(
-        f"Jira authentication OK - mode: {mode}, server: {server}, "
+        f"Jira authentication OK - mode: {mode}, server: {_mask_server(server=server)}, "
         f"user: {myself.get('displayName')}, email: {myself.get('emailAddress')}, "
         f"accountId: {myself.get('accountId')}"
     )
@@ -610,14 +643,16 @@ def process_jira_command_line_config_file(
         # The cloud id goes into the API gateway url we send the bearer token to, so validate it first.
         LOGGER.error(
             "Invalid Jira cloud id (from --cloud-id/JIRA_CLOUD_ID/ATLASSIAN_OAUTH_CLOUD_ID/"
-            f"config 'cloud_id'): {cloud_id}. "
+            f"config 'cloud_id'): {_mask_cloud_id(cloud_id=cloud_id)}. "
             'Pass --cloud-id "" to ignore it.'
         )
         sys.exit(1)
 
     if cloud_id and url and not url.startswith(SA_GATEWAY_URL_PREFIX):
         # Logged here only: resolve_jira_server is also called for the auth-mode lookup, which would double it.
-        LOGGER.info(f"cloud_id provided, discarding supplied Jira url {url} in favor of the API gateway url")
+        LOGGER.info(
+            f"cloud_id provided, discarding supplied Jira url {_mask_server(server=url)} in favor of the API gateway url"
+        )
 
     # Same predicate the client uses, so validation never rejects a config the client would accept. A gateway url
     # already encodes the cloud id, so it satisfies the OAuth cloud-id requirement exactly like --cloud-id does.
@@ -665,7 +700,7 @@ def process_jira_command_line_config_file(
         flavour = "OAuth 2.0 client credentials" if oauth_service_account else "pre-minted scoped API token"
         LOGGER.info(
             f"Using Jira service-account ({flavour}) authentication against "
-            f"{resolve_jira_server(url=url, cloud_id=cloud_id)}"
+            f"{_mask_server(server=resolve_jira_server(url=url, cloud_id=cloud_id))}"
         )
     elif cloud and not user:
         LOGGER.error("Jira user is required for cloud Jira.")

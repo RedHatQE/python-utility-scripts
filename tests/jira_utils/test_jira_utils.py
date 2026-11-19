@@ -45,6 +45,9 @@ BASE_COMMAND = "uv run apps/jira_utils/jira_information.py --verbose  "
 
 CLOUD_ID = "a1b2c3d4-0000-1111-2222-333344445555"
 GATEWAY_URL = SA_GATEWAY_URL_TEMPLATE.format(cloud_id=CLOUD_ID)
+# Only human-readable output is masked; the client still receives GATEWAY_URL.
+MASKED_CLOUD_ID = "<cloud-id>"
+MASKED_GATEWAY_URL = SA_GATEWAY_URL_TEMPLATE.format(cloud_id=MASKED_CLOUD_ID)
 # --cloud-id "" overrides the JIRA_CLOUD_ID env default so the run stays env independent.
 DATACENTER_ARGS = ("--url", "https://issues.redhat.com", "--token", "t", "--cloud-id", "")
 # A pre-minted scoped API token: no client id/secret, so only the cloud id marks it service-account auth.
@@ -1524,9 +1527,99 @@ def test_check_jira_auth_success_logs_identity(mocker, caplog):
     )
 
     assert AUTH_MODE_SERVICE_ACCOUNT in caplog.text
-    assert SA_GATEWAY_URL_TEMPLATE.format(cloud_id="cloud-id") in caplog.text
+    assert SA_GATEWAY_URL_TEMPLATE.format(cloud_id=MASKED_CLOUD_ID) in caplog.text
+    assert SA_GATEWAY_URL_TEMPLATE.format(cloud_id="cloud-id") not in caplog.text
     assert "display-name" in caplog.text
     assert "s3cr3t-token-value" not in caplog.text
+
+
+def test_cloud_id_never_appears_in_logs(mocker, monkeypatch, caplog):
+    caplog.set_level(logging.DEBUG)
+    _clear_jira_env(monkeypatch)
+    mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+
+    def assert_masked(*expected):
+        """Assert every record avoids CLOUD_ID while the given text was actually logged."""
+        messages = [record.getMessage() for record in caplog.records]
+        # Without this the guard would pass on a run that logged nothing at all.
+        assert messages, "no log records captured"
+        assert all(CLOUD_ID not in message for message in messages), messages
+        assert CLOUD_ID not in caplog.text
+        for text in expected:
+            assert any(text in message for message in messages), (text, messages)
+        caplog.clear()
+
+    # The resolved-flavour line names the gateway url it authenticates against.
+    process_jira_command_line_config_file(
+        config_file_path="/path",
+        url="",
+        token="t",
+        issue_pattern="*",
+        resolved_statuses=[],
+        version_string_not_targeted_jiras="",
+        target_versions=[],
+        skip_projects=[],
+        user="",
+        cloud=None,
+        cloud_id=CLOUD_ID,
+    )
+    assert_masked(
+        f"Using Jira service-account (pre-minted scoped API token) authentication against {MASKED_GATEWAY_URL}"
+    )
+
+    # A 401 in service-account mode goes through the auth-error reporter, whose server field is masked too.
+    with pytest.raises(SystemExit):
+        _report_jira_auth_error(
+            exp=JIRAError(status_code=401, text="Unauthorized"),
+            jira_config_dict={"url": "", "cloud": False, "cloud_id": CLOUD_ID, "token": "s3cr3t-token-value"},
+        )
+    assert_masked("Jira authentication failed", f"server: {MASKED_GATEWAY_URL}")
+
+    # --check_jira_auth, success and failure.
+    mock_jira = mocker.MagicMock()
+    mock_jira.myself.return_value = {"displayName": "display-name", "emailAddress": "a@b.c", "accountId": "id-1"}
+    _check_jira_auth(
+        jira_obj=mock_jira,
+        jira_config_dict={"url": "", "cloud": False, "cloud_id": CLOUD_ID, "token": "t"},
+    )
+    assert_masked(f"Jira authentication OK - mode: {AUTH_MODE_SERVICE_ACCOUNT}, server: {MASKED_GATEWAY_URL}")
+
+    # A scope-limited credential is 401/403 on /myself, so its success line is the project-visibility variant.
+    mock_jira.myself.side_effect = JIRAError(status_code=401, text="Unauthorized")
+    mock_jira.projects.return_value = []
+    _check_jira_auth(
+        jira_obj=mock_jira,
+        jira_config_dict={"url": "", "cloud": False, "cloud_id": CLOUD_ID, "token": "t"},
+    )
+    assert_masked(
+        f"Jira authentication OK - mode: {AUTH_MODE_SERVICE_ACCOUNT}, server: {MASKED_GATEWAY_URL}, "
+        "service account: project visibility verified"
+    )
+
+    mock_jira.projects.side_effect = JIRAError(status_code=401, text="Unauthorized")
+    with pytest.raises(SystemExit):
+        _check_jira_auth(
+            jira_obj=mock_jira,
+            jira_config_dict={"url": "", "cloud": False, "cloud_id": CLOUD_ID, "token": "t"},
+        )
+    assert_masked("Jira authentication failed", f"server: {MASKED_GATEWAY_URL}")
+
+    # The invalid-cloud-id error names the failure without echoing the value, so a typo stays diagnosable.
+    with pytest.raises(SystemExit):
+        process_jira_command_line_config_file(
+            config_file_path="/path",
+            url="",
+            token="t",
+            issue_pattern="*",
+            resolved_statuses=[],
+            version_string_not_targeted_jiras="",
+            target_versions=[],
+            skip_projects=[],
+            user="",
+            cloud=None,
+            cloud_id=f"{CLOUD_ID}!",
+        )
+    assert_masked("Invalid Jira cloud id", MASKED_CLOUD_ID)
 
 
 def test_check_jira_auth_failure_exits(mocker, caplog):

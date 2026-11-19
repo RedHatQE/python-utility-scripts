@@ -36,8 +36,9 @@ OAuth 2.0 `client_id` + `client_secret` pair.
 - the client always talks to `https://api.atlassian.com/ex/jira/<cloud_id>`, rebuilt from `cloud_id`;
 - it must be the Atlassian cloud id itself - letters, digits and dashes, 8 to 64 characters, not the site host
   (`https://example.atlassian.net` is wrong). An invalid value is rejected before any request is made, so the
-  token is never sent anywhere. The run exits `1` with a message that names the source and echoes the value:
-  `Invalid Jira cloud id (from --cloud-id/JIRA_CLOUD_ID/ATLASSIAN_OAUTH_CLOUD_ID/config 'cloud_id'): <value>. Pass --cloud-id "" to ignore it.`
+  token is never sent anywhere. The run exits `1` with a message that names the source and masks the value (the
+  placeholder is printed, not the rejected id):
+  `Invalid Jira cloud id (from --cloud-id/JIRA_CLOUD_ID/ATLASSIAN_OAUTH_CLOUD_ID/config 'cloud_id'): <cloud-id>. Pass --cloud-id "" to ignore it.`
   Passing an explicit empty `--cloud-id ""` wins over `JIRA_CLOUD_ID`/`ATLASSIAN_OAUTH_CLOUD_ID` and the `cloud_id`
   config key, and the utility falls back to `url` + `token`. Service-account auth is only fully off when `url` is
   not a gateway url either - a `https://api.atlassian.com/ex/jira/` `url` still selects Bearer auth on its own;
@@ -77,7 +78,9 @@ and ignore `cloud`/`user`. They differ only in where the bearer value comes from
 | Log line | `Using Jira service-account (pre-minted scoped API token) authentication against ...` | `Using Jira service-account (OAuth 2.0 client credentials) authentication against ...` |
 
 In service-account mode a healthy scan logs exactly one `INFO` line naming the resolved flavour and the server - the
-`Log line` above. Flavour B adds a second `INFO` line when it mints (`Minted an Atlassian OAuth 2.0 access token, valid for <n> seconds`).
+`Log line` above. The cloud id is masked in every log line and message: only the resolved flavour and the masked
+gateway url `https://api.atlassian.com/ex/jira/<cloud-id>` are printed, never the id itself - the real id and url are
+still what the utility uses to talk to Jira. Flavour B adds a second `INFO` line when it mints (`Minted an Atlassian OAuth 2.0 access token, valid for <n> seconds`).
 A site `url` discarded because `cloud_id` is set is also logged at `INFO`. An OAuth 2.0 credential that is ignored
 (incomplete pair, or a complete pair with no resolvable cloud id) yields one `WARNING`, naming both what was ignored
 and the credential actually used; none of these notices is an error.
@@ -150,7 +153,7 @@ the project endpoint; if that succeeds the run exits `0` and the success log rep
 of an identity:
 
 ```text
-Jira authentication OK - mode: service-account, server: <gateway>, service account: project visibility verified; the current-user endpoint (/myself) is unavailable for this credential's scopes
+Jira authentication OK - mode: service-account, server: https://api.atlassian.com/ex/jira/<cloud-id>, service account: project visibility verified; the current-user endpoint (/myself) is unavailable for this credential's scopes
 ```
 
 A `401`/`403` from the Jira API means Jira rejected the credential itself - or, for a scope-limited OAuth 2.0
