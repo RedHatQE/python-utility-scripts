@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
 import logging
 import os
 import re
 import sys
+import time
 from functools import lru_cache
 from typing import Any, NoReturn
 
 import click
+import requests
 from jira import JIRA, Issue, JIRAError
 from simple_logger.logger import get_logger
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_fixed
@@ -20,12 +23,24 @@ LOGGER = get_logger(name=__name__)
 SA_GATEWAY_URL_TEMPLATE = "https://api.atlassian.com/ex/jira/{cloud_id}"
 SA_GATEWAY_URL_PREFIX = "https://api.atlassian.com/ex/jira/"
 
+ATLASSIAN_TOKEN_URL = "https://auth.atlassian.com/oauth/token"
+# Re-mint this long before the access token expires, so a scan never runs on a token that dies mid-flight.
+TOKEN_REFRESH_MARGIN_SECONDS = 120
+
 AUTH_MODE_SERVICE_ACCOUNT = "service-account"
 AUTH_MODE_CLOUD_BASIC = "cloud-basic"
 AUTH_MODE_DATACENTER_PAT = "datacenter-pat"
 
 # A credential rejected with 401/403 is not transient, so retrying it only delays the failure.
 AUTH_ERROR_STATUS_CODES = (401, 403)
+
+
+class JiraTokenMintError(RuntimeError):
+    """Raised when an Atlassian OAuth 2.0 access token cannot be minted."""
+
+
+# (client_id, sha256 of the client secret) -> (access_token, monotonic expiry). The plaintext secret is never a key.
+_ATLASSIAN_TOKEN_CACHE: dict[tuple[str, str], tuple[str, float]] = {}
 
 
 def _is_service_account_auth(url: str, cloud_id: str) -> bool:
@@ -76,12 +91,90 @@ def resolve_jira_server(url: str, cloud_id: str) -> str:
     return url
 
 
+def _cloud_id_from_env() -> str:
+    """Return the Atlassian Cloud id from the environment, or "" when neither variable is set.
+
+    Returns:
+        str: `JIRA_CLOUD_ID`, falling back to its OAuth alias `ATLASSIAN_OAUTH_CLOUD_ID`.
+    """
+    return os.getenv("JIRA_CLOUD_ID") or os.getenv("ATLASSIAN_OAUTH_CLOUD_ID") or ""
+
+
+def mint_atlassian_token(client_id: str, client_secret: str) -> str:
+    """Mint (or reuse) a short-lived Atlassian access token from an OAuth 2.0 service-account credential.
+
+    Args:
+        client_id (str): The OAuth 2.0 client id.
+        client_secret (str): The OAuth 2.0 client secret; never logged or returned to the caller.
+
+    Returns:
+        str: A bearer access token, either cached or freshly minted.
+
+    Raises:
+        JiraTokenMintError: On a network failure, a non-200 response or a malformed payload.
+    """
+    now = time.monotonic()
+    # Drop expired entries on every mint, so the cache cannot grow without bound over a long-lived process.
+    for expired_key in [key for key, (_, expiry) in _ATLASSIAN_TOKEN_CACHE.items() if expiry <= now]:
+        del _ATLASSIAN_TOKEN_CACHE[expired_key]
+
+    cache_key = (client_id, hashlib.sha256(client_secret.encode()).hexdigest())
+    cached = _ATLASSIAN_TOKEN_CACHE.get(cache_key)
+    if cached and cached[1] - TOKEN_REFRESH_MARGIN_SECONDS > now:
+        return cached[0]
+
+    try:
+        response = requests.post(
+            ATLASSIAN_TOKEN_URL,
+            json={"grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret},
+            timeout=15,
+        )
+    except requests.RequestException as exp:
+        # Only the exception text: the request body holds the client secret.
+        raise JiraTokenMintError(
+            f"could not mint an Atlassian access token from the OAuth 2.0 credential ({exp})"
+        ) from exp
+
+    if response.status_code != 200:
+        raise JiraTokenMintError(
+            "could not mint an Atlassian access token from the OAuth 2.0 credential "
+            f"(HTTP {response.status_code} - check the client id and secret)"
+        )
+
+    try:
+        payload = response.json()
+    except ValueError as exp:
+        raise JiraTokenMintError(
+            "could not mint an Atlassian access token from the OAuth 2.0 credential "
+            f"(HTTP {response.status_code} - malformed response payload)"
+        ) from exp
+
+    access_token = payload.get("access_token") if isinstance(payload, dict) else None
+    if not isinstance(access_token, str) or not access_token:
+        raise JiraTokenMintError(
+            "could not mint an Atlassian access token from the OAuth 2.0 credential "
+            f"(HTTP {response.status_code} - the response payload has no access_token)"
+        )
+
+    try:
+        expires_in = int(payload.get("expires_in", 3600))
+    except (TypeError, ValueError):
+        expires_in = 3600
+
+    _ATLASSIAN_TOKEN_CACHE[cache_key] = (access_token, time.monotonic() + expires_in)
+    LOGGER.info(f"Minted an Atlassian OAuth 2.0 access token, valid for {expires_in} seconds")
+    return access_token
+
+
 def build_jira_client(url: str, token: str, user: str, cloud: bool, cloud_id: str) -> JIRA:
     """Build a Jira client for the selected authentication mode.
 
+    `token` must already be the effective bearer: the OAuth 2.0 access token is minted before this call, so the
+    caller can redact the live credential from any error raised here.
+
     Args:
         url (str): Jira site url or API gateway url.
-        token (str): Jira PAT, API token or service-account scoped API token.
+        token (str): Jira PAT, API token, service-account scoped API token or minted OAuth access token.
         user (str): Jira user email (cloud basic auth only).
         cloud (bool): Whether to use cloud basic auth.
         cloud_id (str): Atlassian Cloud id; enables service-account (Bearer) auth.
@@ -121,6 +214,25 @@ def _jira_auth_mode(url: str, cloud: bool, cloud_id: str) -> tuple[str, str]:
     return (AUTH_MODE_CLOUD_BASIC if cloud else AUTH_MODE_DATACENTER_PAT), url
 
 
+def _credential_label(url: str, cloud: bool, cloud_id: str) -> str:
+    """Return the human name of the credential the given config authenticates with.
+
+    Args:
+        url (str): Jira site url or API gateway url.
+        cloud (bool): Whether cloud basic auth is requested.
+        cloud_id (str): Atlassian Cloud id; enables service-account (Bearer) auth.
+
+    Returns:
+        str: A one-line label naming the credential that is actually used.
+    """
+    mode, _ = _jira_auth_mode(url=url, cloud=cloud, cloud_id=cloud_id)
+    return {
+        AUTH_MODE_SERVICE_ACCOUNT: "the pre-minted scoped API token",
+        AUTH_MODE_CLOUD_BASIC: "cloud basic auth (user email plus API token)",
+        AUTH_MODE_DATACENTER_PAT: "the Data Center personal access token (PAT)",
+    }[mode]
+
+
 def _error_detail(text: str | None, *, token: str = "") -> str:
     """Return a single-line, bounded and redacted rendering of a Jira error response body.
 
@@ -158,16 +270,25 @@ def _error_detail(text: str | None, *, token: str = "") -> str:
     return detail[:200]
 
 
-def _auth_failure_hint(mode: str) -> str:
+def _auth_failure_hint(mode: str, oauth_service_account: bool = False) -> str:
     """Return the credential guidance for the given auth mode.
 
     Args:
         mode (str): An AUTH_MODE_* constant.
+        oauth_service_account (bool): True when the OAuth 2.0 credential (client id/secret) is in play.
 
     Returns:
         str: A one-line hint telling the user what to check or fix.
     """
     if mode == AUTH_MODE_SERVICE_ACCOUNT:
+        if oauth_service_account:
+            # The access token is minted fresh on every expiry, so a rejection is the credential itself or its scopes.
+            return (
+                "The OAuth 2.0 service-account credential was rejected: verify --client-id/--client-secret, that the "
+                "credential is enabled in Atlassian admin, that --cloud-id matches the Jira site, and that it has the "
+                "scopes the operation needs."
+            )
+
         return (
             "The service-account scoped API token was rejected. It is likely expired, or the cloud id (--cloud-id) "
             "does not match the Jira site the token is scoped to. Re-mint the token, export it as JIRA_TOKEN and "
@@ -190,27 +311,61 @@ def _report_jira_auth_error(exp: JIRAError, jira_config_dict: dict[str, Any]) ->
     detail = _error_detail(text=exp.text, token=jira_config_dict["token"])
     LOGGER.error(f"Jira authentication failed (mode: {mode}, server: {server}): {exp.status_code} {detail}")
     if exp.status_code in AUTH_ERROR_STATUS_CODES:
-        LOGGER.error(_auth_failure_hint(mode=mode))
+        LOGGER.error(_auth_failure_hint(mode=mode, oauth_service_account=bool(jira_config_dict.get("client_secret"))))
 
     sys.exit(1)
+
+
+def _probe_credential(
+    jira_obj: JIRA, *, oauth_service_account: bool = False
+) -> tuple[JIRAError | None, dict[str, Any] | None]:
+    """Probe the credential with myself(), falling back to the project endpoint for a scope-limited OAuth one.
+
+    An OAuth 2.0 service-account credential usually carries only read:jira-work/write:jira-work, which /myself is
+    not part of, so a 401/403 there proves nothing about the credential. The project endpoint decides instead.
+
+    Args:
+        jira_obj (JIRA): An already built Jira client.
+        oauth_service_account (bool): True when the OAuth 2.0 client credential is in play.
+
+    Returns:
+        tuple[JIRAError | None, dict[str, Any] | None]: The error that failed the probe (None on success) and the
+            identity from myself(), which is None when a scope-limited credential was verified via projects().
+    """
+    try:
+        return None, jira_obj.myself()
+    except JIRAError as exp:
+        if not (oauth_service_account and exp.status_code in AUTH_ERROR_STATUS_CODES):
+            return exp, None
+
+        try:
+            jira_obj.projects()
+        except JIRAError:
+            return exp, None
+
+        return None, None
 
 
 def _check_jira_auth(jira_obj: JIRA, jira_config_dict: dict[str, Any]) -> None:
     """Log the resolved auth mode, server url and identity.
 
+    The credential is probed with myself(); a scope-limited OAuth 2.0 service-account credential is 401/403 there,
+    so the project endpoint is probed instead and the success line reports project visibility rather than identity.
+
     Exits with code 1 on authentication failure.
 
     Args:
         jira_obj (JIRA): An already built Jira client.
-        jira_config_dict (dict[str, Any]): Processed Jira configuration (url, token, cloud, cloud_id).
+        jira_config_dict (dict[str, Any]): Processed Jira configuration (url, token, cloud, cloud_id, client_secret).
     """
     mode, server = _jira_auth_mode(
         url=jira_config_dict["url"], cloud=jira_config_dict["cloud"], cloud_id=jira_config_dict["cloud_id"]
     )
 
-    try:
-        myself = jira_obj.myself()
-    except JIRAError as exp:
+    exp, myself = _probe_credential(
+        jira_obj=jira_obj, oauth_service_account=bool(jira_config_dict.get("client_secret"))
+    )
+    if exp is not None:
         if exp.status_code in AUTH_ERROR_STATUS_CODES:
             _report_jira_auth_error(exp=exp, jira_config_dict=jira_config_dict)
 
@@ -222,6 +377,13 @@ def _check_jira_auth(jira_obj: JIRA, jira_config_dict: dict[str, Any]) -> None:
         )
         sys.exit(1)
 
+    if myself is None:
+        LOGGER.info(
+            f"Jira authentication OK - mode: {mode}, server: {server}, service account: project visibility "
+            "verified; the current-user endpoint (/myself) is unavailable for this credential's scopes"
+        )
+        return
+
     LOGGER.info(
         f"Jira authentication OK - mode: {mode}, server: {server}, "
         f"user: {myself.get('displayName')}, email: {myself.get('emailAddress')}, "
@@ -230,24 +392,22 @@ def _check_jira_auth(jira_obj: JIRA, jira_config_dict: dict[str, Any]) -> None:
 
 
 @lru_cache
-def _credential_rejected(jira_obj: JIRA) -> bool:
+def _credential_rejected(jira_obj: JIRA, oauth_service_account: bool = False) -> bool:
     """Return True when Jira rejects the credential itself, not just the single issue that failed.
 
-    A per-issue 401/403 can be a project permission gap (a per-issue 403 is normal in Data Center mode), so the
-    verdict is confirmed with myself(). It is cached so a scan calls myself() at most once.
+    A per-issue 401/403 can be a project permission gap (a per-issue 403 is normal in Data Center mode) or, for a
+    scope-limited OAuth 2.0 credential, the missing current-user scope, so the verdict is confirmed with the same
+    probe --check-auth uses. It is cached (per client and flavour) so a scan probes at most once.
 
     Args:
         jira_obj (JIRA): An already built Jira client.
+        oauth_service_account (bool): True when the OAuth 2.0 client credential is in play.
 
     Returns:
-        bool: True when myself() also fails with 401/403.
+        bool: True when the probe also fails with 401/403.
     """
-    try:
-        jira_obj.myself()
-    except JIRAError as exp:
-        return exp.status_code in AUTH_ERROR_STATUS_CODES
-
-    return False
+    exp, _ = _probe_credential(jira_obj=jira_obj, oauth_service_account=oauth_service_account)
+    return exp is not None and exp.status_code in AUTH_ERROR_STATUS_CODES
 
 
 def _retryable_jira_error(exp: BaseException) -> bool:
@@ -421,21 +581,27 @@ def process_jira_command_line_config_file(
     user: str,
     cloud: bool | None,
     cloud_id: str | None = None,
+    client_id: str = "",
+    client_secret: str = "",
 ) -> dict[str, Any]:
     # Process all the arguments passed from command line or config file or environment variable
     config_dict = get_util_config(util_name="pyutils-jira", config_file_path=config_file_path)
     url = url or config_dict.get("url", "")
     token = token or config_dict.get("token", "")
     user = user or config_dict.get("user", "")
+    # An env-provided value arrives as the CLI default, exactly like --token, so plain CLI-then-config is the order.
+    client_id = client_id or config_dict.get("client_id", "")
+    client_secret = client_secret or config_dict.get("client_secret", "")
     cloud = cloud if cloud is not None else config_dict.get("cloud", False)
     if cloud_id is None:
         # An explicit empty --cloud-id must win over both, so an unset option is what falls back.
-        cloud_id = os.getenv("JIRA_CLOUD_ID") or config_dict.get("cloud_id", "")
+        cloud_id = _cloud_id_from_env() or config_dict.get("cloud_id", "")
 
     if cloud_id and not re.fullmatch(r"[A-Za-z0-9-]{8,64}", cloud_id):
         # The cloud id goes into the API gateway url we send the bearer token to, so validate it first.
         LOGGER.error(
-            f"Invalid Jira cloud id (from --cloud-id/JIRA_CLOUD_ID/config 'cloud_id'): {cloud_id}. "
+            "Invalid Jira cloud id (from --cloud-id/JIRA_CLOUD_ID/ATLASSIAN_OAUTH_CLOUD_ID/"
+            f"config 'cloud_id'): {cloud_id}. "
             'Pass --cloud-id "" to ignore it.'
         )
         sys.exit(1)
@@ -444,16 +610,52 @@ def process_jira_command_line_config_file(
         # Logged here only: resolve_jira_server is also called for the auth-mode lookup, which would double it.
         LOGGER.warning(f"cloud_id provided, discarding supplied Jira url {url} in favor of the API gateway url")
 
-    # Same predicate the client uses, so validation never rejects a config the client would accept.
+    # Same predicate the client uses, so validation never rejects a config the client would accept. A gateway url
+    # already encodes the cloud id, so it satisfies the OAuth cloud-id requirement exactly like --cloud-id does.
     service_account_auth = _is_service_account_auth(url=url, cloud_id=cloud_id)
 
-    if not token:
+    if bool(client_id) != bool(client_secret):
+        # A stray half of the pair must not break a run that has another complete credential, but the identity
+        # switches, so it is an error: a stray JIRA_TOKEN in the env would otherwise silently take over.
+        if token and (url or cloud_id):
+            LOGGER.error(
+                "Incomplete OAuth 2.0 service-account credential (both --client-id and --client-secret are "
+                "required): ignoring it and authenticating with "
+                f"{_credential_label(url=url, cloud=cloud, cloud_id=cloud_id)} instead."
+            )
+            client_id = client_secret = ""
+        else:
+            LOGGER.error(
+                "Both --client-id and --client-secret are required for the OAuth 2.0 service-account credential."
+            )
+            sys.exit(1)
+
+    if client_id and not service_account_auth:
+        # An env-exported pair is a documented convention, so it must not break a run on another credential.
+        if token and url:
+            LOGGER.error(
+                "OAuth 2.0 service-account credential ignored for lack of a cloud id (pass --cloud-id or set "
+                f"JIRA_CLOUD_ID): authenticating with {_credential_label(url=url, cloud=cloud, cloud_id=cloud_id)} "
+                "instead."
+            )
+            client_id = client_secret = ""
+        else:
+            LOGGER.error(
+                "A Jira cloud id is required for OAuth service-account authentication: pass --cloud-id "
+                '(or set JIRA_CLOUD_ID), or opt out of the OAuth credential with --client-id "" --client-secret "".'
+            )
+            sys.exit(1)
+
+    oauth_service_account = bool(client_id and client_secret)
+
+    if not token and not oauth_service_account:
         LOGGER.error("Jira token is required." if service_account_auth else "Jira url and token are required.")
         sys.exit(1)
 
     if service_account_auth:
+        flavour = "OAuth 2.0 client credentials" if oauth_service_account else "pre-minted scoped API token"
         LOGGER.info(
-            "Using Jira service-account (scoped API token) authentication against "
+            f"Using Jira service-account ({flavour}) authentication against "
             f"{resolve_jira_server(url=url, cloud_id=cloud_id)}"
         )
         if cloud or user:
@@ -479,6 +681,8 @@ def process_jira_command_line_config_file(
         "user": user,
         "cloud": cloud,
         "cloud_id": cloud_id,
+        "client_id": client_id,
+        "client_secret": client_secret,
     }
 
 
@@ -553,8 +757,23 @@ def process_jira_command_line_config_file(
     default=None,
 )
 @click.option(
+    "--client-id",
+    help="OAuth 2.0 client id of the Atlassian service account; it is exchanged for a short-lived access token. "
+    "Defaults to ATLASSIAN_OAUTH_CLIENT_ID.",
+    type=click.STRING,
+    default=os.getenv("ATLASSIAN_OAUTH_CLIENT_ID"),
+)
+@click.option(
+    "--client-secret",
+    help="OAuth 2.0 client secret of the Atlassian service account; it is exchanged for a short-lived access "
+    "token. Defaults to JIRA_OAUTH_CLIENT_SECRET.",
+    type=click.STRING,
+    default=os.getenv("JIRA_OAUTH_CLIENT_SECRET"),
+)
+@click.option(
     "--check-auth",
-    help="Verify the Jira credentials against /myself and exit.",
+    help="Verify the Jira credentials against /myself (for a scope-limited OAuth 2.0 service-account credential it "
+    "falls back to the project endpoint) and exit.",
     is_flag=True,
     default=False,
 )
@@ -571,16 +790,23 @@ def get_jira_mismatch(
     verbose: bool,
     cloud: bool | None,
     cloud_id: str | None,
+    client_id: str | None,
+    client_secret: str | None,
     check_auth: bool,
 ) -> None:
     LOGGER.setLevel(logging.DEBUG if verbose else logging.INFO)
     if cloud_id is None:
         # Resolve the env fallback before the guard so it sees the value the rest of the run will use.
         # An explicit empty --cloud-id is not None and must stay the opt-out, so it is never replaced here.
-        cloud_id = os.getenv("JIRA_CLOUD_ID")
+        cloud_id = _cloud_id_from_env() or None
 
-    if not (config_file_path or (token and (url or cloud_id))):
-        LOGGER.error("Config file or token plus url (or cloud id) are required.")
+    # Only an entirely empty invocation is rejected here: every credential combination is validated (with its own
+    # message) in process_jira_command_line_config_file, so the documented exit messages stay reachable.
+    if not (config_file_path or url or token or cloud_id or client_id or client_secret):
+        LOGGER.error(
+            "No Jira configuration supplied: pass --config-file-path, or a credential (--token with --url or "
+            "--cloud-id, or --client-id plus --client-secret with --cloud-id)."
+        )
         sys.exit(1)
 
     # Process all the arguments passed from command line or config file or environment variable
@@ -596,7 +822,19 @@ def get_jira_mismatch(
         user=user,
         cloud=cloud,
         cloud_id=cloud_id,
+        client_id=client_id or "",
+        client_secret=client_secret or "",
     )
+
+    # Mint before the client is built, so every reporter below redacts the live bearer even when JIRA() fails.
+    if jira_config_dict["client_id"] and jira_config_dict["client_secret"]:
+        try:
+            jira_config_dict["token"] = mint_atlassian_token(
+                client_id=jira_config_dict["client_id"], client_secret=jira_config_dict["client_secret"]
+            )
+        except JiraTokenMintError as exp:
+            LOGGER.error(f"Jira authentication failed: {exp}")
+            sys.exit(1)
 
     try:
         jira_obj = build_jira_client(
@@ -649,14 +887,20 @@ def get_jira_mismatch(
 
                     for future in concurrent.futures.as_completed(future_to_jiras):
                         file_name, jira_error_string, status_code = future.result()
-                        if status_code in AUTH_ERROR_STATUS_CODES and _credential_rejected(jira_obj=jira_obj):
+                        if status_code in AUTH_ERROR_STATUS_CODES and _credential_rejected(
+                            jira_obj=jira_obj, oauth_service_account=bool(jira_config_dict.get("client_secret"))
+                        ):
                             # A dead credential breaks every issue identically: report once and stop the scan.
                             mode, _ = _jira_auth_mode(
                                 url=jira_config_dict["url"],
                                 cloud=jira_config_dict["cloud"],
                                 cloud_id=jira_config_dict["cloud_id"],
                             )
-                            LOGGER.error(_auth_failure_hint(mode=mode))
+                            LOGGER.error(
+                                _auth_failure_hint(
+                                    mode=mode, oauth_service_account=bool(jira_config_dict.get("client_secret"))
+                                )
+                            )
                             sys.exit(1)
                         if jira_error_string:
                             jira_error[file_name] = jira_error_string

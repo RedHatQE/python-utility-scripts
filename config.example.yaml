@@ -16,6 +16,9 @@ pyutils-jira:
   # https://api.atlassian.com/ex/jira/<cloud_id>). url and user are then ignored for API calls (a non-gateway url
   # logs a warning); a site url still narrows /browse/<KEY> link matching, while the gateway url serves API calls.
   cloud_id: ""
+  # Uncomment both to select the OAuth 2.0 client-credentials service-account flavour; cloud_id is then required.
+  # client_id: <oauth client id>
+  # client_secret: ATOA...
   # Data Center PAT and Cloud basic auth only: uncomment url (and user for cloud basic auth).
   # url: <jira url>
   # user: <jira user email>

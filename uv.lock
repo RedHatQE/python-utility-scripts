@@ -1255,6 +1255,7 @@ dependencies = [
     { name = "pytest-mock" },
     { name = "python-simple-logger" },
     { name = "pyyaml" },
+    { name = "requests" },
     { name = "tenacity" },
 ]
 
@@ -1282,6 +1283,7 @@ requires-dist = [
     { name = "pytest-mock", specifier = ">=3.14.0,<4" },
     { name = "python-simple-logger", specifier = ">=2.0.4,<3" },
     { name = "pyyaml", specifier = ">=6.0.1,<7" },
+    { name = "requests", specifier = ">=2.32,<3" },
     { name = "tenacity", specifier = ">=9.0.0,<10" },
 ]
 
