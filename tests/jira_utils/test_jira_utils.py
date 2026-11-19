@@ -101,9 +101,17 @@ def _patch_logger(mocker):
     return mocker.patch("apps.jira_utils.jira_information.LOGGER")
 
 
+LOGGED_LEVELS = ("debug", "info", "success", "warning", "error", "exception", "critical")
+
+
 def _logged(mock_logger, level):
     """Return the messages logged at `level` through `mock_logger`."""
     return [call.args[0] for call in getattr(mock_logger, level).call_args_list]
+
+
+def _all_logged(mock_logger):
+    """Return every (level, message) `mock_logger` emitted, so a run's total log volume can be asserted."""
+    return [(level, message) for level in LOGGED_LEVELS for message in _logged(mock_logger, level)]
 
 
 def _token_cache_key(client_id=OAUTH_CLIENT_ID, client_secret=OAUTH_CLIENT_SECRET):
@@ -126,6 +134,8 @@ JIRA_ENV_VARS = (
     "JIRA_SERVER_URL",
     "JIRA_TOKEN",
     "JIRA_USER",
+    "JIRA_SA_CLIENT_ID",
+    "JIRA_SA_CLIENT_SECRET",
     "JIRA_OAUTH_CLIENT_SECRET",
     "ATLASSIAN_OAUTH_CLIENT_ID",
     "ATLASSIAN_OAUTH_CLOUD_ID",
@@ -193,6 +203,14 @@ def _patch_option_defaults(monkeypatch, **defaults):
     for option in get_jira_mismatch.params:
         if option.name in defaults:
             monkeypatch.setattr(option, "default", defaults[option.name])
+
+
+def _source_option_defaults():
+    """Return the click defaults a fresh execution of the source module body computes from the current env."""
+    spec = importlib.util.spec_from_file_location("jira_information_env_defaults", JIRA_SOURCE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return {option.name: option.default for option in module.get_jira_mismatch.params}
 
 
 def test_process_jira_command_line_config_file_empty_config_token() -> None:
@@ -963,20 +981,38 @@ def test_auth_failure_hint_pre_minted_service_account():
 @pytest.mark.parametrize(
     "env_var,option_name,expected",
     [
-        pytest.param("ATLASSIAN_OAUTH_CLIENT_ID", "client_id", OAUTH_CLIENT_ID, id="client-id"),
-        pytest.param("JIRA_OAUTH_CLIENT_SECRET", "client_secret", OAUTH_CLIENT_SECRET, id="client-secret"),
+        pytest.param("ATLASSIAN_OAUTH_CLIENT_ID", "client_id", OAUTH_CLIENT_ID, id="client-id-alias"),
+        pytest.param("JIRA_OAUTH_CLIENT_SECRET", "client_secret", OAUTH_CLIENT_SECRET, id="client-secret-alias"),
     ],
 )
 def test_oauth_credential_env_aliases_are_option_defaults(monkeypatch, env_var, option_name, expected):
+    # The hermetic fixture drops the primary JIRA_SA_* names, so the alias alone has to supply the default.
     monkeypatch.setenv(env_var, expected)
+
+    assert _source_option_defaults()[option_name] == expected
+
+
+@pytest.mark.parametrize(
+    "env_var,alias_var,option_name,expected",
+    [
+        pytest.param("JIRA_SA_CLIENT_ID", "ATLASSIAN_OAUTH_CLIENT_ID", "client_id", OAUTH_CLIENT_ID, id="client-id"),
+        pytest.param(
+            "JIRA_SA_CLIENT_SECRET",
+            "JIRA_OAUTH_CLIENT_SECRET",
+            "client_secret",
+            OAUTH_CLIENT_SECRET,
+            id="client-secret",
+        ),
+    ],
+)
+def test_oauth_credential_primary_env_names_are_option_defaults(monkeypatch, env_var, alias_var, option_name, expected):
     # The click defaults are evaluated at import time, so only re-executing the module body can prove the env read.
-    spec = importlib.util.spec_from_file_location("jira_information_env_defaults", JIRA_SOURCE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    monkeypatch.setenv(env_var, expected)
+    assert _source_option_defaults()[option_name] == expected
 
-    defaults = {option.name: option.default for option in module.get_jira_mismatch.params}
-
-    assert defaults[option_name] == expected
+    # Both spellings set: the primary name wins, so the alias must not change the resolved default.
+    monkeypatch.setenv(alias_var, "alias-value-that-must-lose")
+    assert _source_option_defaults()[option_name] == expected
 
 
 @pytest.mark.parametrize(
@@ -1633,8 +1669,10 @@ def test_get_jira_mismatch_cloud_id_discards_site_url(mocker):
     assert result.exit_code == 0
     mock_jira_cls.assert_called_once_with(server=GATEWAY_URL, token_auth="t")
     # Logged from config processing only: resolve_jira_server runs several times per run and must not repeat it.
-    warnings = [message for message in _logged(mock_logger, "warning") if "discarding supplied Jira url" in message]
-    assert len(warnings) == 1
+    # Dropping a url the run does not use is informational, so a healthy run does not warn about it.
+    notices = [message for message in _logged(mock_logger, "info") if "discarding supplied Jira url" in message]
+    assert len(notices) == 1
+    assert _logged(mock_logger, "warning") == []
 
 
 def test_get_jira_mismatch_mint_failure_reports_once(mocker, monkeypatch, caplog):
@@ -1735,13 +1773,15 @@ def test_get_jira_mismatch_oauth_env_aliases(mocker, monkeypatch):
     mock_logger = _patch_logger(mocker)
     mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
     # The os.getenv() option defaults were frozen at import time, before this test env existed, so re-evaluate them.
+    # The hermetic fixture drops the primary JIRA_SA_* names, so the defaults can only come from the aliases.
+    defaults = _source_option_defaults()
     _patch_option_defaults(
         monkeypatch,
         url=None,
         token=None,
         user=None,
-        client_id=os.getenv("ATLASSIAN_OAUTH_CLIENT_ID"),
-        client_secret=os.getenv("JIRA_OAUTH_CLIENT_SECRET"),
+        client_id=defaults["client_id"],
+        client_secret=defaults["client_secret"],
     )
     mock_mint = mocker.patch("apps.jira_utils.jira_information.mint_atlassian_token", return_value="minted-token")
     mock_jira_cls = mocker.patch("apps.jira_utils.jira_information.JIRA")
@@ -1749,6 +1789,38 @@ def test_get_jira_mismatch_oauth_env_aliases(mocker, monkeypatch):
 
     # No --cloud-id, --client-id or --client-secret: every value comes from an env alias.
     result = CliRunner().invoke(get_jira_mismatch, ["--check-auth"])
+
+    assert result.exit_code == 0, _logged(mock_logger, "error")
+    mock_mint.assert_called_once_with(client_id=OAUTH_CLIENT_ID, client_secret=OAUTH_CLIENT_SECRET)
+    mock_jira_cls.assert_called_once_with(server=GATEWAY_URL, token_auth="minted-token")
+
+
+@pytest.mark.parametrize(
+    "with_alias", [pytest.param(False, id="primary-only"), pytest.param(True, id="primary-and-alias")]
+)
+def test_get_jira_mismatch_oauth_primary_env_names_reach_the_client(mocker, monkeypatch, with_alias):
+    _clear_jira_env(monkeypatch)
+    monkeypatch.setenv("JIRA_SA_CLIENT_ID", OAUTH_CLIENT_ID)
+    monkeypatch.setenv("JIRA_SA_CLIENT_SECRET", OAUTH_CLIENT_SECRET)
+    monkeypatch.setenv("ATLASSIAN_OAUTH_CLOUD_ID", CLOUD_ID)
+    if with_alias:
+        # Both spellings set: the primary pair must win, so the mint never sees an alias value.
+        monkeypatch.setenv("ATLASSIAN_OAUTH_CLIENT_ID", "alias-client-id")
+        monkeypatch.setenv("JIRA_OAUTH_CLIENT_SECRET", "alias-client-secret")  # pragma: allowlist secret
+    mock_logger = _patch_logger(mocker)
+    # The os.getenv() defaults were frozen at import, so apply the ones the current env produces from the source.
+    defaults = _source_option_defaults()
+    _patch_option_defaults(
+        monkeypatch,
+        url=None,
+        token=None,
+        user=None,
+        client_id=defaults["client_id"],
+        client_secret=defaults["client_secret"],
+    )
+
+    # No --cloud-id, --client-id or --client-secret: every value comes from the env.
+    result, mock_jira_cls, mock_mint = _run_oauth_command(mocker, "--check-auth")
 
     assert result.exit_code == 0, _logged(mock_logger, "error")
     mock_mint.assert_called_once_with(client_id=OAUTH_CLIENT_ID, client_secret=OAUTH_CLIENT_SECRET)
@@ -1775,13 +1847,14 @@ def test_get_jira_mismatch_ignores_lone_oauth_value_with_another_credential(mock
     )
 
     assert result.exit_code == 0
-    errors = _logged(mock_logger, "error")
-    # Dropping the stray half switches the identity, so it is reported at ERROR and names the credential in use.
-    assert len(errors) == 1
-    assert "Incomplete OAuth 2.0 service-account credential" in errors[0]
-    assert "ignoring it" in errors[0]
-    assert "the Data Center personal access token (PAT)" in errors[0]
-    assert OAUTH_CLIENT_ID not in errors[0]
+    warnings = _logged(mock_logger, "warning")
+    # Dropping the stray half switches the identity, so it is reported at WARNING and names the credential in use.
+    assert len(warnings) == 1
+    assert "Incomplete OAuth 2.0 service-account credential" in warnings[0]
+    assert "ignoring it" in warnings[0]
+    assert "the Data Center personal access token (PAT)" in warnings[0]
+    assert OAUTH_CLIENT_ID not in warnings[0]
+    assert _logged(mock_logger, "error") == []
     mock_mint.assert_not_called()
     mock_jira_cls.assert_called_once_with(token_auth="dc-token", options={"server": "https://issues.redhat.com"})
 
@@ -1843,12 +1916,13 @@ def test_get_jira_mismatch_ignores_oauth_pair_without_cloud_id(
     )
 
     assert result.exit_code == 0
-    errors = _logged(mock_logger, "error")
-    assert len(errors) == 1
-    assert "OAuth 2.0 service-account credential ignored for lack of a cloud id" in errors[0]
+    warnings = _logged(mock_logger, "warning")
+    assert len(warnings) == 1
+    assert "OAuth 2.0 service-account credential ignored for lack of a cloud id" in warnings[0]
     # The message names the credential the run actually authenticates with.
-    assert expected in errors[0]
-    assert OAUTH_CLIENT_SECRET not in errors[0]
+    assert expected in warnings[0]
+    assert OAUTH_CLIENT_SECRET not in warnings[0]
+    assert _logged(mock_logger, "error") == []
     mock_mint.assert_not_called()
     # A site url cannot satisfy the cloud-id requirement, so the pair is dropped and the site credential is used.
     mock_jira_cls.assert_called_once_with(**expected_client_kwargs)
@@ -1912,10 +1986,35 @@ def test_get_jira_mismatch_lone_oauth_value_names_the_pre_minted_credential(mock
     )
 
     assert result.exit_code == 0
-    errors = _logged(mock_logger, "error")
-    assert len(errors) == 1
-    assert "the pre-minted scoped API token" in errors[0]
-    assert OAUTH_CLIENT_SECRET not in errors[0]
+    warnings = _logged(mock_logger, "warning")
+    assert len(warnings) == 1
+    assert "the pre-minted scoped API token" in warnings[0]
+    assert OAUTH_CLIENT_SECRET not in warnings[0]
+    assert _logged(mock_logger, "error") == []
+    mock_mint.assert_not_called()
+    mock_jira_cls.assert_called_once_with(server=GATEWAY_URL, token_auth="t")
+
+
+def test_get_jira_mismatch_healthy_pre_minted_run_logs_one_line(mocker, monkeypatch):
+    _clear_jira_env(monkeypatch)
+    mock_logger = _patch_logger(mocker)
+    mock_mint = mocker.patch("apps.jira_utils.jira_information.mint_atlassian_token")
+
+    # --cloud/--user alongside a service-account credential is the case that used to add an "Ignoring cloud/user"
+    # line, so a run that is healthy in every respect must log nothing but the resolved auth mode.
+    result, mock_jira_cls, _ = _run_jira_command(
+        mocker, "--cloud-id", CLOUD_ID, "--token", "t", "--cloud", "--user", "a@b.c"
+    )
+
+    assert result.exit_code == 0
+    records = _all_logged(mock_logger)
+    assert len(records) == 1
+    level, message = records[0]
+    assert level == "info"
+    assert "Using Jira service-account (pre-minted scoped API token) authentication" in message
+    assert _logged(mock_logger, "error") == []
+    assert _logged(mock_logger, "warning") == []
+    assert not [message for _, message in records if "Ignoring cloud/user" in message]
     mock_mint.assert_not_called()
     mock_jira_cls.assert_called_once_with(server=GATEWAY_URL, token_auth="t")
 

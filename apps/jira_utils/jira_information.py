@@ -617,7 +617,7 @@ def process_jira_command_line_config_file(
 
     if cloud_id and url and not url.startswith(SA_GATEWAY_URL_PREFIX):
         # Logged here only: resolve_jira_server is also called for the auth-mode lookup, which would double it.
-        LOGGER.warning(f"cloud_id provided, discarding supplied Jira url {url} in favor of the API gateway url")
+        LOGGER.info(f"cloud_id provided, discarding supplied Jira url {url} in favor of the API gateway url")
 
     # Same predicate the client uses, so validation never rejects a config the client would accept. A gateway url
     # already encodes the cloud id, so it satisfies the OAuth cloud-id requirement exactly like --cloud-id does.
@@ -627,7 +627,7 @@ def process_jira_command_line_config_file(
         # A stray half of the pair must not break a run that has another complete credential, but the identity
         # switches, so it is an error: a stray JIRA_TOKEN in the env would otherwise silently take over.
         if token and (url or cloud_id):
-            LOGGER.error(
+            LOGGER.warning(
                 "Incomplete OAuth 2.0 service-account credential (both --client-id and --client-secret are "
                 "required): ignoring it and authenticating with "
                 f"{_credential_label(url=url, cloud=cloud, cloud_id=cloud_id)} instead."
@@ -642,7 +642,7 @@ def process_jira_command_line_config_file(
     if client_id and not service_account_auth:
         # An env-exported pair is a documented convention, so it must not break a run on another credential.
         if token and url:
-            LOGGER.error(
+            LOGGER.warning(
                 "OAuth 2.0 service-account credential ignored for lack of a cloud id (pass --cloud-id or set "
                 f"JIRA_CLOUD_ID): authenticating with {_credential_label(url=url, cloud=cloud, cloud_id=cloud_id)} "
                 "instead."
@@ -667,8 +667,6 @@ def process_jira_command_line_config_file(
             f"Using Jira service-account ({flavour}) authentication against "
             f"{resolve_jira_server(url=url, cloud_id=cloud_id)}"
         )
-        if cloud or user:
-            LOGGER.info("Ignoring cloud/user: service-account auth uses only the bearer token.")
     elif cloud and not user:
         LOGGER.error("Jira user is required for cloud Jira.")
         sys.exit(1)
@@ -768,16 +766,16 @@ def process_jira_command_line_config_file(
 @click.option(
     "--client-id",
     help="OAuth 2.0 client id of the Atlassian service account; it is exchanged for a short-lived access token. "
-    "Defaults to ATLASSIAN_OAUTH_CLIENT_ID.",
+    "Defaults to JIRA_SA_CLIENT_ID (aliases: ATLASSIAN_OAUTH_CLIENT_ID).",
     type=click.STRING,
-    default=os.getenv("ATLASSIAN_OAUTH_CLIENT_ID"),
+    default=os.getenv("JIRA_SA_CLIENT_ID") or os.getenv("ATLASSIAN_OAUTH_CLIENT_ID"),
 )
 @click.option(
     "--client-secret",
     help="OAuth 2.0 client secret of the Atlassian service account; it is exchanged for a short-lived access "
-    "token. Defaults to JIRA_OAUTH_CLIENT_SECRET.",
+    "token. Defaults to JIRA_SA_CLIENT_SECRET (aliases: JIRA_OAUTH_CLIENT_SECRET).",
     type=click.STRING,
-    default=os.getenv("JIRA_OAUTH_CLIENT_SECRET"),
+    default=os.getenv("JIRA_SA_CLIENT_SECRET") or os.getenv("JIRA_OAUTH_CLIENT_SECRET"),
 )
 @click.option(
     "--check-auth",

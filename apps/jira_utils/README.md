@@ -28,8 +28,8 @@ below), selected by the config file, CLI option or environment variable:
 
 Service-account (Bearer) mode is selected in two ways: by setting `cloud_id`, or by setting `url` to the API
 gateway URL `https://api.atlassian.com/ex/jira/<cloud_id>`. The gateway URL is itself a service-account selector,
-so either one is enough and `cloud` and `user` are then ignored (an INFO message says so). A credential is still
-required: `token`, or the OAuth 2.0 `client_id` + `client_secret` pair.
+so either one is enough and `cloud` and `user` are then ignored. A credential is still required: `token`, or the
+OAuth 2.0 `client_id` + `client_secret` pair.
 
 `cloud_id` wins over `url`, `cloud` and `user`:
 
@@ -37,11 +37,11 @@ required: `token`, or the OAuth 2.0 `client_id` + `client_secret` pair.
 - it must be the Atlassian cloud id itself - letters, digits and dashes, 8 to 64 characters, not the site host
   (`https://example.atlassian.net` is wrong). An invalid value is rejected before any request is made, so the
   token is never sent anywhere. The run exits `1` with a message that names the source and echoes the value:
-  `Invalid Jira cloud id (from --cloud-id/JIRA_CLOUD_ID/config 'cloud_id'): <value>. Pass --cloud-id "" to ignore it.`
+  `Invalid Jira cloud id (from --cloud-id/JIRA_CLOUD_ID/ATLASSIAN_OAUTH_CLOUD_ID/config 'cloud_id'): <value>. Pass --cloud-id "" to ignore it.`
   Passing an explicit empty `--cloud-id ""` wins over `JIRA_CLOUD_ID`/`ATLASSIAN_OAUTH_CLOUD_ID` and the `cloud_id`
   config key, and the utility falls back to `url` + `token`. Service-account auth is only fully off when `url` is
   not a gateway url either - a `https://api.atlassian.com/ex/jira/` `url` still selects Bearer auth on its own;
-- a non-gateway `url` supplied together with `cloud_id` is discarded with a warning
+- a non-gateway `url` supplied together with `cloud_id` is discarded and the discard is logged at `INFO`
   (`cloud_id provided, discarding supplied Jira url ... in favor of the API gateway url`);
 - `cloud: true` plus `user` does not switch the mode away from Bearer auth.
 
@@ -56,11 +56,12 @@ In service-account mode `url` and `user` are optional; only `token`, or the OAut
 pair, is required.
 
 Environment variables: `JIRA_SERVER_URL` (or `JIRA_URL`), `JIRA_TOKEN`, `JIRA_USER`, `JIRA_CLOUD_ID` (or
-`ATLASSIAN_OAUTH_CLOUD_ID`), `ATLASSIAN_OAUTH_CLIENT_ID`, `JIRA_OAUTH_CLIENT_SECRET`. The CLI options take
-precedence; an environment variable is used as the default of its CLI option, so it also overrides the config file
-entry for the same key. `cloud` has no environment variable, only `--cloud` or `cloud: true`. The pair mixes prefixes
-on purpose: `ATLASSIAN_OAUTH_CLOUD_ID` and `ATLASSIAN_OAUTH_CLIENT_ID` are kept for compatibility with the existing
-rootcoz/tooling convention, while the `JIRA_*` names follow this repo's scheme.
+`ATLASSIAN_OAUTH_CLOUD_ID`), `JIRA_SA_CLIENT_ID`, `JIRA_SA_CLIENT_SECRET`. The CLI options take precedence; an
+environment variable is used as the default of its CLI option, so it also overrides the config file entry for the
+same key. `cloud` has no environment variable, only `--cloud` or `cloud: true`. The two OAuth 2.0 credential variables
+also accept the older aliases `ATLASSIAN_OAUTH_CLIENT_ID` and `JIRA_OAUTH_CLIENT_SECRET`; the `JIRA_SA_*` pair wins
+when both are set. The aliases keep the older mixed prefixes for compatibility with the existing rootcoz/tooling
+convention, while the primary `JIRA_SA_*` names follow this repo's scheme.
 
 ### The two service-account flavours
 
@@ -70,10 +71,16 @@ and ignore `cloud`/`user`. They differ only in where the bearer value comes from
 | | A - pre-minted scoped token | B - OAuth 2.0 client credentials |
 |---|---|---|
 | Credential | `--token` (`ATST...`) minted by an Atlassian admin | `--client-id` + `--client-secret` (`ATOA...`) created by an Atlassian admin for the service account |
-| Environment | `JIRA_TOKEN` | `ATLASSIAN_OAUTH_CLIENT_ID` / `JIRA_OAUTH_CLIENT_SECRET` |
+| Environment | `JIRA_TOKEN` | `JIRA_SA_CLIENT_ID` / `JIRA_SA_CLIENT_SECRET` (aliases: `ATLASSIAN_OAUTH_CLIENT_ID` / `JIRA_OAUTH_CLIENT_SECRET`) |
 | Config keys | `token` | `client_id` / `client_secret` |
 | Lifetime | expires, so it must be re-minted by hand | ~1 hour access token, minted once per run and reused for the whole run, so no manual re-minting |
 | Log line | `Using Jira service-account (pre-minted scoped API token) authentication against ...` | `Using Jira service-account (OAuth 2.0 client credentials) authentication against ...` |
+
+In service-account mode a healthy scan logs exactly one `INFO` line naming the resolved flavour and the server - the
+`Log line` above. Flavour B adds a second `INFO` line when it mints (`Minted an Atlassian OAuth 2.0 access token, valid for <n> seconds`).
+A site `url` discarded because `cloud_id` is set is also logged at `INFO`. An OAuth 2.0 credential that is ignored
+(incomplete pair, or a complete pair with no resolvable cloud id) yields one `WARNING`, naming both what was ignored
+and the credential actually used; none of these notices is an error.
 
 With flavour B the utility exchanges the pair at `https://auth.atlassian.com/oauth/token`
 (`grant_type=client_credentials`), keeps the resulting access token in-process for the whole run and never logs the
@@ -89,13 +96,13 @@ No Jira configuration supplied: pass --config-file-path, or a credential (--toke
 Every credential combination then gets its own message:
 
 - a lone `client_id` or `client_secret` **together with another complete credential** (`token` plus `url` or
-  `cloud_id`) is logged at `ERROR` and the run continues on that credential; the message names the credential
+  `cloud_id`) is logged at `WARNING` and the run continues on that credential; the message names the credential
   actually used (`the pre-minted scoped API token`, `cloud basic auth (user email plus API token)` or
   `the Data Center personal access token (PAT)`):
   `Incomplete OAuth 2.0 service-account credential (both --client-id and --client-secret are required): ignoring it and authenticating with <credential> instead.`
 - a lone pair member as the **only** credential exits `1`:
   `Both --client-id and --client-secret are required for the OAuth 2.0 service-account credential.`
-- a complete pair without a resolvable cloud id, with `token` and `url` set, is logged at `ERROR` and the run
+- a complete pair without a resolvable cloud id, with `token` and `url` set, is logged at `WARNING` and the run
   continues on that credential, again naming it:
   `OAuth 2.0 service-account credential ignored for lack of a cloud id (pass --cloud-id or set JIRA_CLOUD_ID): authenticating with <credential> instead.`
 - a complete pair without a cloud id as the **only** credential exits `1`, naming the opt-out:
@@ -128,7 +135,7 @@ this value.
 
 > **Not a cloud id:** an Atlassian *account id* (shape `digits:uuid`, for example `712020:f0a60b32-...`, as seen
 > in profile URLs) is a user identity. As `--cloud-id` it fails the validation above (no colons allowed), and
-> behind a gateway `url` the gateway answers with a confusing `404`. `ATLASSIAN_OAUTH_CLIENT_ID` likewise must be
+> behind a gateway `url` the gateway answers with a confusing `404`. `JIRA_SA_CLIENT_ID` likewise must be
 > the OAuth client id of the service account, not an account id.
 
 ### Verify the credential with `--check-auth`
@@ -218,8 +225,8 @@ pyutils-jira:
 Equivalent from the CLI, with the secret kept out of `ps` and the shell history:
 
 ```bash
-ATLASSIAN_OAUTH_CLOUD_ID=4a4f8f8f-1234-5678-9abc-def012345678 \
-ATLASSIAN_OAUTH_CLIENT_ID=<oauth client id> JIRA_OAUTH_CLIENT_SECRET="$JIRA_OAUTH_CLIENT_SECRET" \
+JIRA_CLOUD_ID=4a4f8f8f-1234-5678-9abc-def012345678 \
+JIRA_SA_CLIENT_ID=<oauth client id> JIRA_SA_CLIENT_SECRET="$JIRA_SA_CLIENT_SECRET" \
 pyutils-jira --check-auth
 ```
 
@@ -255,7 +262,8 @@ Precedence is per key:
   `None`: an unset `--skip-projects` falls back to the config key, but an explicitly empty value becomes `[""]`
   (truthy, and its empty prefix matches every issue), so it silently disables the target-version check - omit it);
 - `client_id` and `client_secret` resolve as `cli_value or config_dict.get(key, "")`; their environment variables
-  (`ATLASSIAN_OAUTH_CLIENT_ID`, `JIRA_OAUTH_CLIENT_SECRET`) arrive as the CLI option defaults, exactly like
+  (`JIRA_SA_CLIENT_ID`, `JIRA_SA_CLIENT_SECRET`, or the aliases `ATLASSIAN_OAUTH_CLIENT_ID`,
+  `JIRA_OAUTH_CLIENT_SECRET`) arrive as the CLI option defaults, exactly like
   `JIRA_TOKEN`, so the order stays CLI/env then config file;
 - `cloud` resolves as `cloud if cloud is not None else config_dict.get("cloud", False)`. `--cloud` is a flag whose
   default is `None` and it has no environment variable, so it can enable cloud basic auth but cannot disable a
