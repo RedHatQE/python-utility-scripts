@@ -78,7 +78,21 @@ def all_python_files(directory: click.Path | None = None) -> Iterable[str]:
     """
     Get all python files from current directory and subdirectories
     """
-    exclude_dirs = [".tox", "venv", ".pytest_cache", "site-packages", ".git"]
+    exclude_dirs = [
+        ".tox",
+        "venv",
+        ".pytest_cache",
+        "site-packages",
+        ".git",
+        # Other checkouts of the same repo (.worktrees), agent scratch trees (.pi/tmp) and build outputs hold the
+        # same sources again, so scanning them reports every finding once per copy.
+        ".worktrees",
+        ".pi",
+        ".mypy_cache",
+        "node_modules",
+        "build",
+        "dist",
+    ]
     target = str(directory) if directory else os.path.abspath(os.curdir)
 
     for root, _, files in os.walk(target):

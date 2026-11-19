@@ -38,6 +38,7 @@ from apps.jira_utils.jira_information import (
     process_jira_command_line_config_file,
     resolve_jira_server,
 )
+from apps.utils import all_python_files
 
 LOGGER = get_logger(name=__name__)
 BASE_COMMAND = "uv run apps/jira_utils/jira_information.py --verbose  "
@@ -46,8 +47,10 @@ CLOUD_ID = "a1b2c3d4-0000-1111-2222-333344445555"
 GATEWAY_URL = SA_GATEWAY_URL_TEMPLATE.format(cloud_id=CLOUD_ID)
 # --cloud-id "" overrides the JIRA_CLOUD_ID env default so the run stays env independent.
 DATACENTER_ARGS = ("--url", "https://issues.redhat.com", "--token", "t", "--cloud-id", "")
+# A pre-minted scoped API token: no client id/secret, so only the cloud id marks it service-account auth.
+SCOPED_TOKEN_ARGS = ("--cloud-id", CLOUD_ID, "--token", "scoped-token")
 OAUTH_CLIENT_ID = "oauth-client-id"
-OAUTH_CLIENT_SECRET = "s3cr3t-client-secret"
+OAUTH_CLIENT_SECRET = "s3cr3t-client-secret"  # pragma: allowlist secret
 # --cloud-id is explicit so the OAuth runs never depend on JIRA_CLOUD_ID / ATLASSIAN_OAUTH_CLOUD_ID.
 OAUTH_ARGS = ("--cloud-id", CLOUD_ID, "--client-id", OAUTH_CLIENT_ID, "--client-secret", OAUTH_CLIENT_SECRET)
 JIRA_SOURCE_PATH = os.path.abspath(
@@ -610,7 +613,7 @@ def test_process_oauth_credential_without_cloud_id_exits(mocker, monkeypatch, ca
             cloud=None,
             cloud_id="",
             client_id="client-id",
-            client_secret="client-secret",
+            client_secret="client-secret",  # pragma: allowlist secret
         )
     assert exc_info.value.code == 1
     # The minted token only works against the API gateway, which cannot be resolved without a cloud id.
@@ -638,7 +641,7 @@ def test_process_client_credentials_from_config(mocker, monkeypatch):
         cloud=None,
     )
     assert result["client_id"] == "config-client-id"
-    assert result["client_secret"] == "config-client-secret"
+    assert result["client_secret"] == "config-client-secret"  # pragma: allowlist secret
     assert result["cloud_id"] == CLOUD_ID
     # No token is needed at all: the credential is exchanged for one, which the log line confirms.
     assert result["token"] == ""
@@ -665,7 +668,7 @@ def test_process_client_id_from_cli_wins_over_config(mocker, monkeypatch):
         client_id="cli-client-id",
     )
     assert result["client_id"] == "cli-client-id"
-    assert result["client_secret"] == "config-client-secret"
+    assert result["client_secret"] == "config-client-secret"  # pragma: allowlist secret
 
 
 @pytest.mark.parametrize(
@@ -937,7 +940,7 @@ def test_mint_atlassian_token_prunes_expired_entry(mocker):
     mint_atlassian_token(client_id=OAUTH_CLIENT_ID, client_secret="rotated-secret")
 
     assert expired_key not in _ATLASSIAN_TOKEN_CACHE
-    assert set(_ATLASSIAN_TOKEN_CACHE) == {_token_cache_key(client_secret="rotated-secret")}
+    assert set(_ATLASSIAN_TOKEN_CACHE) == {_token_cache_key(client_secret="rotated-secret")}  # pragma: allowlist secret
 
 
 def test_auth_failure_hint_oauth_service_account():
@@ -1241,6 +1244,29 @@ def test_jira_api_error(mocker):
     assert result == ("", "404 JiraError status code: 404, details: Issue not found].", 404)
 
 
+def test_get_jira_information_retry_error_reports_per_issue_error(mocker, caplog):
+    caplog.set_level(logging.DEBUG)
+    mocker.patch.object(get_issue.retry, "sleep")
+    mock_jira = mocker.MagicMock()
+    mock_jira.issue.side_effect = JIRAError(status_code=500, text="Server error")
+
+    # The real retry wrapper is in play: tenacity raises RetryError, which is not a JIRAError.
+    result = get_jira_information(
+        jira_object=mock_jira,
+        jira_id="ABC-500",
+        resolved_status=[],
+        target_version_str="",
+        skip_project_ids=[],
+        jira_target_versions=[],
+        file_name="file.py",
+    )
+
+    assert result == ("file.py", "ABC-500 JiraError status code: 500, details: Server error].", 500)
+    # No traceback: JIRAError.__str__ re-renders the raw body and headers, and this must stay a single line.
+    assert [record for record in caplog.records if record.exc_info] == []
+    assert "Traceback" not in caplog.text
+
+
 @pytest.mark.parametrize("status_code", [401, 403])
 def test_jira_auth_error_keeps_per_issue_text_short(mocker, status_code):
     mocker.patch(
@@ -1470,7 +1496,9 @@ def test_check_jira_auth_success_logs_identity(mocker, caplog):
 def test_check_jira_auth_failure_exits(mocker, caplog):
     caplog.set_level(logging.DEBUG)
     mock_jira = mocker.MagicMock()
+    # A cloud id means service-account auth, so both endpoints are probed and both must reject the credential.
     mock_jira.myself.side_effect = JIRAError(status_code=403, text="Forbidden")
+    mock_jira.projects.side_effect = JIRAError(status_code=401, text="Unauthorized")
 
     with pytest.raises(SystemExit) as exc_info:
         _check_jira_auth(
@@ -1971,8 +1999,8 @@ def test_get_jira_mismatch_aborts_scan_when_credential_rejected(mocker):
     assert result.exit_code == 1
     # A dead credential breaks every issue identically: stop at the first one instead of scanning the repo.
     mock_get_jira_information.assert_called_once()
-    # The abort is decided by the myself() probe, not by the per-issue status code alone.
-    mock_credential_rejected.assert_called_once_with(jira_obj=mock_jira_cls.return_value, oauth_service_account=False)
+    # The abort is decided by the probe, not by the per-issue status code alone; a cloud id is service-account auth.
+    mock_credential_rejected.assert_called_once_with(jira_obj=mock_jira_cls.return_value, service_account=True)
     error_messages = _logged(mock_logger, "error")
     assert len(_hint_logs(error_messages, AUTH_MODE_SERVICE_ACCOUNT)) == 1
     assert not [message for message in error_messages if "Following Jira ids failed" in message]
@@ -2043,30 +2071,30 @@ def test_credential_rejected_when_myself_succeeds(mocker):
 
 
 @pytest.mark.parametrize("status_code", [pytest.param(401, id="401"), pytest.param(403, id="403")])
-def test_credential_rejected_oauth_service_account_probes_projects(mocker, status_code):
+def test_credential_rejected_service_account_probes_projects(mocker, status_code):
     mock_jira = mocker.MagicMock()
-    # read:jira-work does not cover /myself, so a scope-limited OAuth credential is rejected there while healthy.
+    # read:jira-work does not cover /myself, so a scope-limited credential is rejected there while healthy.
     mock_jira.myself.side_effect = JIRAError(status_code=status_code)
 
-    assert _credential_rejected(jira_obj=mock_jira, oauth_service_account=True) is False
+    assert _credential_rejected(jira_obj=mock_jira, service_account=True) is False
     mock_jira.projects.assert_called_once()
 
 
 @pytest.mark.parametrize("status_code", [pytest.param(401, id="401"), pytest.param(403, id="403")])
-def test_credential_rejected_oauth_service_account_when_projects_also_fails(mocker, status_code):
+def test_credential_rejected_service_account_when_projects_also_fails(mocker, status_code):
     mock_jira = mocker.MagicMock()
     mock_jira.myself.side_effect = JIRAError(status_code=status_code)
     mock_jira.projects.side_effect = JIRAError(status_code=403)
 
-    # Both endpoints reject the credential, so the verdict stays "rejected" even for the OAuth flavour.
-    assert _credential_rejected(jira_obj=mock_jira, oauth_service_account=True) is True
+    # Both endpoints reject the credential, so the verdict stays "rejected" for the service-account flavour.
+    assert _credential_rejected(jira_obj=mock_jira, service_account=True) is True
 
 
 def test_credential_rejected_data_center_flavour_does_not_probe_projects(mocker):
     mock_jira = mocker.MagicMock()
     mock_jira.myself.side_effect = JIRAError(status_code=403)
 
-    # The projects() fallback is OAuth-only: a static PAT that fails /myself is rejected outright.
+    # The projects() fallback is service-account only: a static PAT that fails /myself is rejected outright.
     assert _credential_rejected(jira_obj=mock_jira) is True
     mock_jira.projects.assert_not_called()
 
@@ -2093,13 +2121,53 @@ def test_get_jira_mismatch_oauth_scan_continues_when_projects_succeed(mocker, mo
     assert [message for message in errors if "Following Jira ids failed" in message]
 
 
+def test_get_jira_mismatch_check_auth_accepts_scoped_token_when_projects_succeed(mocker):
+    mock_logger = _patch_logger(mocker)
+    mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+    mock_jira_cls = mocker.patch("apps.jira_utils.jira_information.JIRA")
+    # A pre-minted scoped token carries read:jira-work only, so /myself is 401 while the token itself is healthy.
+    mock_jira_cls.return_value.myself.side_effect = JIRAError(status_code=401, text="Unauthorized")
+    mock_jira_cls.return_value.projects.return_value = [{"key": "ABC"}]
+    mock_get_jiras = mocker.patch("apps.jira_utils.jira_information.get_jiras_from_python_files", return_value={})
+
+    result = CliRunner().invoke(get_jira_mismatch, [*SCOPED_TOKEN_ARGS, "--check-auth"])
+
+    assert result.exit_code == 0, _logged(mock_logger, "error")
+    # The project endpoint, not /myself, decides whether a scope-limited credential is alive.
+    mock_jira_cls.return_value.projects.assert_called_once()
+    assert [message for message in _logged(mock_logger, "info") if "project visibility verified" in message]
+    mock_get_jiras.assert_not_called()
+
+
+def test_get_jira_mismatch_scoped_token_scan_continues_when_myself_is_denied(mocker):
+    mock_logger = _patch_logger(mocker)
+    # _credential_rejected is not mocked: the real probe must see through the /myself 401 via projects().
+    result, mock_jira_cls, mock_get_jira_information = _run_scan(
+        mocker,
+        SCOPED_TOKEN_ARGS,
+        issues={"ABC-1", "ABC-2"},
+        per_issue_status=403,
+        myself_side_effect=JIRAError(status_code=401, text="Unauthorized"),
+    )
+
+    assert result.exit_code == 1
+    # The credential is healthy, so a per-issue 403 aggregates instead of aborting after the first issue.
+    assert mock_get_jira_information.call_count == 2
+    mock_jira_cls.return_value.projects.assert_called_once()
+    errors = _logged(mock_logger, "error")
+    assert _hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT) == []
+    assert [message for message in errors if "Following Jira ids failed" in message]
+
+
 @pytest.mark.parametrize(
     "exp,expected",
     [
+        pytest.param(JIRAError(status_code=400), False, id="400_not_retryable"),
         pytest.param(JIRAError(status_code=401), False, id="401_not_retryable"),
         pytest.param(JIRAError(status_code=403), False, id="403_not_retryable"),
-        pytest.param(JIRAError(status_code=404), True, id="404_retryable"),
+        pytest.param(JIRAError(status_code=404), False, id="404_not_retryable"),
         pytest.param(JIRAError(status_code=500), True, id="500_retryable"),
+        pytest.param(JIRAError(status_code=503), True, id="503_retryable"),
         pytest.param(JIRAError(status_code=None), True, id="none_status_retryable"),
         pytest.param(RuntimeError("boom"), False, id="non_jira_error_not_retryable"),
     ],
@@ -2108,19 +2176,20 @@ def test_retryable_jira_error(exp, expected):
     assert _retryable_jira_error(exp) is expected
 
 
-def test_get_issue_does_not_retry_auth_error(mocker):
+@pytest.mark.parametrize("status_code", [pytest.param(401, id="401"), pytest.param(404, id="404")])
+def test_get_issue_does_not_retry_permanent_error(mocker, status_code):
     mocker.patch.object(get_issue.retry, "sleep")
     mock_jira = mocker.MagicMock()
-    mock_jira.issue.side_effect = JIRAError(status_code=401, text="Unauthorized")
+    mock_jira.issue.side_effect = JIRAError(status_code=status_code, text="permanent")
 
     with pytest.raises(JIRAError):
-        get_issue(jira=mock_jira, jira_id="ABC-401")
+        get_issue(jira=mock_jira, jira_id=f"ABC-{status_code}")
 
-    # Retrying a rejected credential only delays the failure, it can never succeed.
+    # A 4xx fails identically on every attempt, it can never succeed.
     assert mock_jira.issue.call_count == 1
 
 
-def test_get_issue_retries_non_auth_error(mocker):
+def test_get_issue_retries_server_error(mocker):
     mocker.patch.object(get_issue.retry, "sleep")
     mock_jira = mocker.MagicMock()
     mock_jira.issue.side_effect = JIRAError(status_code=500, text="Server error")
@@ -2129,6 +2198,25 @@ def test_get_issue_retries_non_auth_error(mocker):
         get_issue(jira=mock_jira, jira_id="ABC-500")
 
     assert mock_jira.issue.call_count == 3
+
+
+def test_get_jira_mismatch_scan_survives_exhausted_retry(mocker):
+    mock_logger = _patch_logger(mocker)
+    mocker.patch.object(get_issue.retry, "sleep")
+    mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+    mock_jira_cls = mocker.patch("apps.jira_utils.jira_information.JIRA")
+    mock_jira_cls.return_value.issue.side_effect = JIRAError(status_code=500, text="Server error")
+    mocker.patch("apps.jira_utils.jira_information.get_jiras_from_python_files", return_value={"file.py": {"ABC-500"}})
+
+    result = CliRunner().invoke(get_jira_mismatch, list(SCOPED_TOKEN_ARGS))
+
+    # A RetryError left unwrapped escapes the worker future as a traceback instead of the normal exit path.
+    assert isinstance(result.exception, SystemExit)
+    assert result.exit_code == 1
+    assert _logged(mock_logger, "exception") == []
+    aggregate = [message for message in _logged(mock_logger, "error") if "Following Jira ids failed" in message]
+    assert len(aggregate) == 1
+    assert "ABC-500 JiraError status code: 500, details: Server error]" in aggregate[0]
 
 
 @pytest.mark.parametrize("status_code", [None, 500])
@@ -2237,3 +2325,15 @@ def test_get_jira_mismatch_auth_client_error_reports_hint(mocker, monkeypatch, s
 def test_browse_link_regex_hardening(jira_url, content, expected):
     jira_ids = get_jira_ids_from_file_content(file_content=content, issue_pattern=r"([A-Z]+-[0-9]+)", jira_url=jira_url)
     assert jira_ids == expected
+
+
+def test_all_python_files_skips_worktree_agent_and_build_trees(tmp_path):
+    for relative_path in ("pkg/a.py", ".worktrees/b/c.py", ".pi/tmp/d.py", "node_modules/e.py", "build/f.py"):
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("")
+
+    # A second checkout (.worktrees), an agent scratch tree and build output hold the same sources again, so the
+    # scan must see each real file once.
+    found = {os.path.relpath(path, tmp_path) for path in all_python_files(directory=tmp_path)}
+    assert found == {"pkg/a.py"}

@@ -14,7 +14,7 @@ import click
 import requests
 from jira import JIRA, Issue, JIRAError
 from simple_logger.logger import get_logger
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_fixed
+from tenacity import RetryError, retry, retry_if_exception, stop_after_attempt, wait_fixed
 
 from apps.utils import ListParamType, all_python_files, get_util_config
 
@@ -317,16 +317,17 @@ def _report_jira_auth_error(exp: JIRAError, jira_config_dict: dict[str, Any]) ->
 
 
 def _probe_credential(
-    jira_obj: JIRA, *, oauth_service_account: bool = False
+    jira_obj: JIRA, *, service_account: bool = False
 ) -> tuple[JIRAError | None, dict[str, Any] | None]:
-    """Probe the credential with myself(), falling back to the project endpoint for a scope-limited OAuth one.
+    """Probe the credential with myself(), falling back to the project endpoint for a scope-limited one.
 
-    An OAuth 2.0 service-account credential usually carries only read:jira-work/write:jira-work, which /myself is
-    not part of, so a 401/403 there proves nothing about the credential. The project endpoint decides instead.
+    A service-account credential (an OAuth 2.0 pair as much as a pre-minted scoped API token) usually carries only
+    read:jira-work/write:jira-work, which /myself is not part of, so a 401/403 there proves nothing about the
+    credential. The project endpoint decides instead.
 
     Args:
         jira_obj (JIRA): An already built Jira client.
-        oauth_service_account (bool): True when the OAuth 2.0 client credential is in play.
+        service_account (bool): True for any service-account (Bearer) auth, whatever minted the token.
 
     Returns:
         tuple[JIRAError | None, dict[str, Any] | None]: The error that failed the probe (None on success) and the
@@ -335,7 +336,7 @@ def _probe_credential(
     try:
         return None, jira_obj.myself()
     except JIRAError as exp:
-        if not (oauth_service_account and exp.status_code in AUTH_ERROR_STATUS_CODES):
+        if not (service_account and exp.status_code in AUTH_ERROR_STATUS_CODES):
             return exp, None
 
         try:
@@ -349,8 +350,8 @@ def _probe_credential(
 def _check_jira_auth(jira_obj: JIRA, jira_config_dict: dict[str, Any]) -> None:
     """Log the resolved auth mode, server url and identity.
 
-    The credential is probed with myself(); a scope-limited OAuth 2.0 service-account credential is 401/403 there,
-    so the project endpoint is probed instead and the success line reports project visibility rather than identity.
+    The credential is probed with myself(); a scope-limited service-account credential is 401/403 there, so the
+    project endpoint is probed instead and the success line reports project visibility rather than identity.
 
     Exits with code 1 on authentication failure.
 
@@ -363,7 +364,8 @@ def _check_jira_auth(jira_obj: JIRA, jira_config_dict: dict[str, Any]) -> None:
     )
 
     exp, myself = _probe_credential(
-        jira_obj=jira_obj, oauth_service_account=bool(jira_config_dict.get("client_secret"))
+        jira_obj=jira_obj,
+        service_account=_is_service_account_auth(url=jira_config_dict["url"], cloud_id=jira_config_dict["cloud_id"]),
     )
     if exp is not None:
         if exp.status_code in AUTH_ERROR_STATUS_CODES:
@@ -392,37 +394,38 @@ def _check_jira_auth(jira_obj: JIRA, jira_config_dict: dict[str, Any]) -> None:
 
 
 @lru_cache
-def _credential_rejected(jira_obj: JIRA, oauth_service_account: bool = False) -> bool:
+def _credential_rejected(jira_obj: JIRA, service_account: bool = False) -> bool:
     """Return True when Jira rejects the credential itself, not just the single issue that failed.
 
     A per-issue 401/403 can be a project permission gap (a per-issue 403 is normal in Data Center mode) or, for a
-    scope-limited OAuth 2.0 credential, the missing current-user scope, so the verdict is confirmed with the same
-    probe --check-auth uses. It is cached (per client and flavour) so a scan probes at most once.
+    scope-limited service-account credential, the missing current-user scope, so the verdict is confirmed with the
+    same probe --check-auth uses. It is cached (per client and flavour) so a scan probes at most once.
 
     Args:
         jira_obj (JIRA): An already built Jira client.
-        oauth_service_account (bool): True when the OAuth 2.0 client credential is in play.
+        service_account (bool): True for any service-account (Bearer) auth, whatever minted the token.
 
     Returns:
         bool: True when the probe also fails with 401/403.
     """
-    exp, _ = _probe_credential(jira_obj=jira_obj, oauth_service_account=oauth_service_account)
+    exp, _ = _probe_credential(jira_obj=jira_obj, service_account=service_account)
     return exp is not None and exp.status_code in AUTH_ERROR_STATUS_CODES
 
 
 def _retryable_jira_error(exp: BaseException) -> bool:
     """Return True when a failed Jira call is worth retrying.
 
-    A rejected credential (401/403) fails identically on every attempt, so retrying it only multiplies the
-    delay for every issue in the repo.
+    Only a transient failure is retried: no status code at all (a connection error) or a 5xx. A 4xx is permanent
+    (a rejected credential, a missing issue, a bad request), so retrying it only multiplies the delay for every
+    issue in the repo.
 
     Args:
         exp (BaseException): The exception raised by the Jira call.
 
     Returns:
-        bool: True for a JIRAError that is not an authentication error.
+        bool: True for a JIRAError without a status code or with a 5xx status code.
     """
-    return isinstance(exp, JIRAError) and exp.status_code not in AUTH_ERROR_STATUS_CODES
+    return isinstance(exp, JIRAError) and (exp.status_code is None or exp.status_code >= 500)
 
 
 @retry(
@@ -560,10 +563,16 @@ def get_jira_information(
                     f"version {jira_target_versions}."
                 )
 
-    except JIRAError as exp:
-        status_code = exp.status_code
+    except (JIRAError, RetryError) as exp:
+        # tenacity wraps an exhausted retry in RetryError, which is not a JIRAError: left unwrapped it escapes the
+        # worker future as a traceback and aborts the whole scan.
+        cause: BaseException | None = exp.last_attempt.exception() if isinstance(exp, RetryError) else exp
+        # Only a JIRAError is retried, so the last attempt always is one; the guard keeps a stray cause readable.
+        jira_exp = cause if isinstance(cause, JIRAError) else None
+        status_code = jira_exp.status_code if jira_exp else None
         jira_error_string += (
-            f"{jira_id} JiraError status code: {status_code}, details: {_error_detail(text=exp.text, token=token)}]."
+            f"{jira_id} JiraError status code: {status_code}, details: "
+            f"{_error_detail(text=jira_exp.text if jira_exp else str(cause), token=token)}]."
         )
 
     return file_name, jira_error_string, status_code
@@ -863,6 +872,8 @@ def get_jira_mismatch(
         return
 
     jira_error: dict[str, str] = {}
+    # The probe's projects() fallback covers any service-account (Bearer) auth, not just the OAuth pair.
+    service_account_auth = _is_service_account_auth(url=jira_config_dict["url"], cloud_id=jira_config_dict["cloud_id"])
 
     if jira_id_dict := get_jiras_from_python_files(
         issue_pattern=jira_config_dict["issue_pattern"],
@@ -888,7 +899,7 @@ def get_jira_mismatch(
                     for future in concurrent.futures.as_completed(future_to_jiras):
                         file_name, jira_error_string, status_code = future.result()
                         if status_code in AUTH_ERROR_STATUS_CODES and _credential_rejected(
-                            jira_obj=jira_obj, oauth_service_account=bool(jira_config_dict.get("client_secret"))
+                            jira_obj=jira_obj, service_account=service_account_auth
                         ):
                             # A dead credential breaks every issue identically: report once and stop the scan.
                             mode, _ = _jira_auth_mode(
