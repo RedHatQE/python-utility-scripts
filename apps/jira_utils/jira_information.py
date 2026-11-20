@@ -87,6 +87,30 @@ def _strip_userinfo(url: str) -> str:
     return urlunsplit(parts._replace(netloc=parts.netloc.rpartition("@")[2]))
 
 
+def _userinfo_fragment(url: str) -> str:
+    """Return the `user:password` part of the userinfo of `url`, or "" when it carries none.
+
+    For registering the one credential the run already knows as a literal secret: the text mask ends a url at a quote,
+    so a password holding one (`https://user:pa'ss@host`) is not delimited there and would reach every log line.
+
+    Args:
+        url (str): A single url.
+
+    Returns:
+        str: Everything between the scheme and the last "@" of the authority, or "" when the url has no userinfo. An
+            authority `urlsplit` refuses to parse (an unmatched bracket) is matched by `_AUTHORITY_USERINFO_RE`
+            instead, exactly like `_strip_userinfo` does, because such a url still reaches the client.
+    """
+    try:
+        authority = urlsplit(url).netloc
+    except ValueError:
+        match = _AUTHORITY_USERINFO_RE.search(url)
+        authority = match.group(0)[len(match.group(1)) :] if match else ""
+
+    # The LAST "@" is the userinfo delimiter (urlsplit and requests agree), so a password holding one stays whole.
+    return authority.rpartition("@")[0]
+
+
 def _mask_userinfo(text: str) -> str:
     """Return `text` with the userinfo component of every url it embeds dropped.
 
@@ -351,6 +375,8 @@ def _install_log_secret_filter(cloud_id: str = "", server: str = "", token: str 
         server (str): The server url the client talks to; a url supplying a userinfo needs the filter too.
         token (str): The configured Jira token or the minted access token; a real (>=8 characters) one is masked.
     """
+    # A config file with a null `token:` hands back None: a non-str is treated as absent instead of trusted to be one.
+    token = token if isinstance(token, str) else ""
     has_userinfo = _strip_userinfo(url=server) != server
     # A run with no cloud id, no real token and no userinfo url has nothing to mask.
     if not (cloud_id or has_userinfo or len(token) >= 8):
@@ -361,6 +387,10 @@ def _install_log_secret_filter(cloud_id: str = "", server: str = "", token: str 
     # ("connection" -> "con***ion"), exactly like _error_detail's guard.
     if len(token) >= 8:
         _LOG_FILTER.add_secret(value=token, mask="***")
+    if has_userinfo:
+        # The url in a log line ends at a quote, so a password holding one is not masked by the text regex. The
+        # configured userinfo is known here, so it is registered as a literal: masking no longer depends on the regex.
+        _LOG_FILTER.add_secret(value=_userinfo_fragment(url=server), mask="***")
 
     global _FILTER_INSTALLED, _PREVIOUS_RECORD_FACTORY, _INSTALLED_RECORD_FACTORY
     if _FILTER_INSTALLED:
@@ -633,8 +663,9 @@ def _error_detail(text: str | None, *, token: str = "", cloud_id: str = "") -> s
             replaced by '<cloud-id>'.
 
     Returns:
-        str: The collapsed body truncated to 200 characters, with a real (>=8 chars) token replaced by '***' and the
-            cloud id replaced by '<cloud-id>'.
+        str: The collapsed body truncated to 200 characters, with a real (>=8 chars) token replaced by '***', the
+            cloud id replaced by '<cloud-id>' and the configured url userinfo (registered as a literal secret by
+            `_install_log_secret_filter`) replaced by '***'.
     """
     # Userinfo is dropped before any bounding: a url in the body can embed the credential itself.
     full = _mask_userinfo(text=str(text or ""))
@@ -645,6 +676,9 @@ def _error_detail(text: str | None, *, token: str = "", cloud_id: str = "") -> s
     # A cloud id only reaches here validated, so replacing it cannot shred the body.
     if cloud_id:
         secrets.append((cloud_id, _mask_cloud_id(cloud_id=cloud_id)))
+    # This module's own lines bypass the record filter, so the literals it registered (the configured url userinfo,
+    # which the text mask above cannot delimit when its password holds a quote) are applied here as well.
+    secrets.extend(_LOG_FILTER.secrets.items())
 
     for value, mask in secrets:
         full = full.replace(value, mask)
@@ -799,7 +833,8 @@ def _project_endpoint_is_anonymous(
 
         Redirects are not followed: `resolve_redirects` calls `rebuild_auth`, which re-injects the netrc credential
         (of this host or of the redirect target's) on the next hop, so following one would put a credential on the
-        wire. A 3xx is no evidence of anonymous readability anyway, which is exactly what the False verdict says.
+        wire. A 3xx is no evidence of anonymous readability anyway, which is exactly what the False verdict says: the
+        status code is matched as a 2xx range rather than through `Response.ok`, which is also True for a 3xx.
     """
     if not server:
         return False
@@ -825,7 +860,9 @@ def _project_endpoint_is_anonymous(
     finally:
         session.close()
 
-    if not response.ok:
+    # Response.ok is True for a 3xx too, and redirects are not followed here, so a redirect body would otherwise reach
+    # the parser: only a 2xx is an answer.
+    if not 200 <= response.status_code < 300:
         LOGGER.debug(f"Anonymous project probe returned HTTP {response.status_code}: not anonymously readable")
         return False
 
@@ -1022,12 +1059,14 @@ _credential_rejected.cache_clear = _credential_probe_verdict.cache_clear  # type
 def _retryable_jira_error(exp: BaseException) -> bool:
     """Return True when a failed Jira call is worth retrying.
 
-    Only a transient failure is retried: no status code at all (a connection error) or a 5xx. Any 4xx is permanent (a
-    rejected credential, a missing issue, a bad request), so retrying it only multiplies the delay for every issue in
-    the repo. A 429 (and a 503 carrying `Retry-After`) is already retried by python-jira's ResilientSession, up to 3
-    times, for `10 * 2**counter` seconds capped at `max_retry_delay` (60 s) plus 0.5-1.0 jitter and `Retry-After`
-    honoured, so a 429 is left to the library. A 503 carrying `Retry-After` is still retried by both layers here,
-    serially, and a 503 without one only by this one - a pre-existing cost the code still incurs.
+    Only a transient failure is retried: a `JIRAError` carrying no status code at all, or a 5xx. Any 4xx is permanent
+    (a rejected credential, a missing issue, a bad request), so retrying it only multiplies the delay for every issue
+    in the repo. A raw `requests.Timeout`/`ConnectionError` is not retried here: it is reported as that issue's own
+    finding instead. A 429 (and a 503 carrying `Retry-After`) is already retried by python-jira's ResilientSession,
+    with its own backoff and jitter and `Retry-After` honoured best-effort, so a 429 is left to the library. How long
+    it sleeps there depends on the installed python-jira version, so no fixed formula or minimum wait is promised
+    here. A 503 carrying `Retry-After` is still retried by both layers, serially, and a 503 without one only by this
+    one - a pre-existing cost the code still incurs.
 
     Args:
         exp (BaseException): The exception raised by the Jira call.
@@ -1214,7 +1253,9 @@ def process_jira_command_line_config_file(
     # Process all the arguments passed from command line or config file or environment variable
     config_dict = get_util_config(util_name="pyutils-jira", config_file_path=config_file_path)
     url = url or config_dict.get("url", "")
-    token = token or config_dict.get("token", "")
+    # A YAML `token:` parses to None, and a config file holding a cloud id and an OAuth pair may legitimately leave
+    # the pre-minted token out: the null is normalised here so every consumer sees a str, and the run still mints.
+    token = token or config_dict.get("token") or ""
     user = user or config_dict.get("user", "")
     # An explicit empty --client-id/--client-secret must opt out over the config file pair, because that pair would
     # otherwise switch the run to OAuth and quietly discard the configured token; an unset option is what falls back.
@@ -1224,8 +1265,19 @@ def process_jira_command_line_config_file(
         client_secret = _client_secret_from_env() or config_dict.get("client_secret", "")
     cloud = cloud if cloud is not None else config_dict.get("cloud", False)
     if cloud_id is None:
-        # An explicit empty --cloud-id must win over both, so an unset option is what falls back.
-        cloud_id = _cloud_id_from_env() or config_dict.get("cloud_id", "")
+        # An explicit empty --cloud-id must win over both, so an unset option is what falls back. A YAML `cloud_id:`
+        # parses to None, which is normalised to "" like the token.
+        cloud_id = _cloud_id_from_env() or config_dict.get("cloud_id") or ""
+
+    if cloud_id and not isinstance(cloud_id, str):
+        # A YAML `cloud_id: 12345678` parses as an int, and the shape check below would raise instead of reporting.
+        # The type is rejected first, with the fix in the message: a numeric id quoted as a string stays a valid id.
+        LOGGER.error(
+            "Invalid Jira cloud id type (from --cloud-id/JIRA_CLOUD_ID/ATLASSIAN_OAUTH_CLOUD_ID/config 'cloud_id'): "
+            f"expected a string, got {type(cloud_id).__name__}. Quote the value in the config file, e.g. "
+            'cloud_id: "<cloud-id>".'
+        )
+        sys.exit(1)
 
     if cloud_id and not _is_valid_cloud_id(cloud_id=cloud_id):
         # The cloud id goes into the API gateway url we send the bearer token to, so validate it first.

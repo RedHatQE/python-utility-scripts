@@ -281,12 +281,14 @@ rest of the scan.
 
 A per-issue transport failure (a connection error, a timeout, an exhausted retry) does not abort the scan either: it
 is rendered as one finding of its own, `"<KEY> Jira connection failed (<ErrorType>): <detail>"`, and every such
-finding reaches the aggregate report. A scan retries a `5xx` and a call that got no response at all; it leaves a
-`429` to python-jira's `ResilientSession`, which already retries a `429` (and a `503` carrying `Retry-After`)
-internally, up to 3 times, with `10 * 2**counter` seconds capped at 60 s plus 0.5-1.0 jitter and `Retry-After`
-honoured - a second layer on top would add tens of seconds to minutes per throttled issue, serially. A `503`
-carrying `Retry-After` is still retried by both layers here; a `503` without one is a `5xx`, so it is retried by
-this layer.
+finding reaches the aggregate report. A scan retries a `5xx` and a `JIRAError` that carries no status code at all (the
+shape python-jira wraps a connection error in); a raw `requests.Timeout`/`ConnectionError` that reaches the scan
+without that wrapper is not retried by this layer and is reported per issue straight away. A `429` is left to
+python-jira's `ResilientSession`, which retries a `429` (and a `503` carrying `Retry-After`) internally with its own
+backoff and jitter, honouring `Retry-After` best-effort - how long it sleeps depends on the installed python-jira
+version, so no fixed formula and no minimum wait is promised here. That is also why there is no second layer: it
+would add tens of seconds to minutes per throttled issue, serially. A `503` carrying `Retry-After` is still retried by
+both layers here; a `503` without one is a `5xx`, so it is retried by this layer.
 
 In service-account (Bearer) mode - the only mode with two probe endpoints - a `401`/`403` from **both** of them means
 the credential is genuinely rejected. A Data Center PAT or cloud basic auth has no project-endpoint fallback: its

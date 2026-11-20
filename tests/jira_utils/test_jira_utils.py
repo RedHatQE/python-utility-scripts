@@ -64,6 +64,9 @@ USERINFO_PASSWORD = "sup3r-s3cret"  # pragma: allowlist secret
 USERINFO_GATEWAY_URL = f"https://user:{USERINFO_PASSWORD}@api.atlassian.com/ex/jira/{CLOUD_ID}"
 USERINFO_DATACENTER_URL = f"https://user:{USERINFO_PASSWORD}@issues.redhat.com"
 USERINFO_SITE_URL = f"https://user:{USERINFO_PASSWORD}@site.atlassian.net"
+# A password holding a quote: the text regex ends a url at a quote, so such a credential is never delimited there.
+USERINFO_QUOTED_PASSWORD = "pa'ss-w0rd"  # pragma: allowlist secret
+USERINFO_QUOTED_SITE_URL = f"https://user:{USERINFO_QUOTED_PASSWORD}@site.atlassian.net"
 # --cloud-id "" overrides the JIRA_CLOUD_ID env default so the run stays env independent.
 DATACENTER_ARGS = ("--url", "https://issues.redhat.com", "--token", "t", "--cloud-id", "")
 # A pre-minted scoped API token: no client id/secret, so only the cloud id marks it service-account auth.
@@ -617,6 +620,78 @@ def test_process_cloud_id_from_cli_wins_over_config(mocker, monkeypatch):
         cloud_id="cli-cloud-id",
     )
     assert result["cloud_id"] == "cli-cloud-id"
+
+
+def test_process_null_cloud_id_is_normalised_to_empty(mocker, monkeypatch):
+    _clear_jira_env(monkeypatch)
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        # A YAML `cloud_id:` (nothing) parses to None: it must read as "no cloud id", not crash the shape check.
+        return_value={"url": "https://example.com", "token": "tok", "cloud_id": None},
+    )
+    result = process_jira_command_line_config_file(
+        config_file_path="/path",
+        url="https://example.com",
+        token="tok",
+        issue_pattern="*",
+        resolved_statuses=[],
+        version_string_not_targeted_jiras="",
+        target_versions=[],
+        skip_projects=[],
+        user="",
+        cloud=None,
+    )
+    assert result["cloud_id"] == ""
+
+
+def test_process_int_cloud_id_exits_with_the_quoting_hint(mocker, monkeypatch, caplog):
+    _clear_jira_env(monkeypatch)
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        # `cloud_id: 12345678` parses from YAML as an int: re.fullmatch would raise instead of reporting it.
+        return_value={"url": "https://example.com", "token": "tok", "cloud_id": 12345678},
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        process_jira_command_line_config_file(
+            config_file_path="/path",
+            url="https://example.com",
+            token="tok",
+            issue_pattern="*",
+            resolved_statuses=[],
+            version_string_not_targeted_jiras="",
+            target_versions=[],
+            skip_projects=[],
+            user="",
+            cloud=None,
+        )
+    assert exc_info.value.code == 1
+    # The diagnostic must say how to fix it, and must not echo the value it could not use.
+    assert "Invalid Jira cloud id type" in caplog.text
+    assert "expected a string, got int" in caplog.text
+    assert "Quote the value" in caplog.text
+    assert "12345678" not in caplog.text
+
+
+def test_process_quoted_numeric_cloud_id_stays_valid(mocker, monkeypatch):
+    _clear_jira_env(monkeypatch)
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={"url": "https://example.com", "token": "tok", "cloud_id": "12345678"},
+    )
+    result = process_jira_command_line_config_file(
+        config_file_path="/path",
+        url="https://example.com",
+        token="tok",
+        issue_pattern="*",
+        resolved_statuses=[],
+        version_string_not_targeted_jiras="",
+        target_versions=[],
+        skip_projects=[],
+        user="",
+        cloud=None,
+    )
+    # The same id quoted as a string is a valid cloud id shape: the type guard never rejects it.
+    assert result["cloud_id"] == "12345678"
 
 
 def test_process_service_account_valid_without_url_and_user(mocker, monkeypatch):
@@ -1948,6 +2023,25 @@ def test_error_detail_masks_the_userinfo_of_a_body_url(caplog, status_code):
     assert len(detail) == 200
 
 
+def test_transport_log_filter_masks_a_configured_password_holding_a_quote(mocker, caplog):
+    caplog.set_level(logging.DEBUG)
+    # The text mask ends a url at a quote, so this password is not delimited there: the filter must mask the userinfo
+    # it was configured with instead of relying on that regex.
+    _run_jira_command(mocker, "--url", USERINFO_QUOTED_SITE_URL, "--token", "t", "--cloud-id", "", "--check-auth")
+
+    logging.getLogger("jira.resilientsession").warning("GET %s/rest/api/2/issue/ABC-1", USERINFO_QUOTED_SITE_URL)
+    # A body echoing the same url must not leak it either: this module's own lines bypass the record filter.
+    detail = _error_detail(text=f'{{"url": "{USERINFO_QUOTED_SITE_URL}"}}', token="t")
+
+    messages = [record.getMessage() for record in caplog.records if record.name == "jira.resilientsession"]
+    assert len(messages) == 1
+    assert messages[0] == "GET https://***@site.atlassian.net/rest/api/2/issue/ABC-1"
+    assert USERINFO_QUOTED_PASSWORD not in caplog.text
+    # The url stays readable around the redaction, which is what makes the log line still useful.
+    assert "https://***@site.atlassian.net" in detail
+    assert USERINFO_QUOTED_PASSWORD not in detail
+
+
 def test_discarded_site_url_is_logged_without_its_userinfo(mocker):
     mock_logger = _patch_logger(mocker)
     mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
@@ -2548,14 +2642,16 @@ def test_check_jira_auth_rejects_when_both_probe_endpoints_reject(mocker, myself
 ANONYMOUS_PROBE_URL = f"{GATEWAY_URL}/rest/api/2/project"
 
 
-def _probe_response(mocker, ok=True, payload=None, raise_error=None):
+def _probe_response(mocker, ok=True, payload=None, raise_error=None, status_code=None):
     """Mock `requests.Session.send` only, so the probe's own preparation still runs for real."""
     if raise_error is not None:
         return mocker.patch("requests.Session.send", side_effect=raise_error)
 
     response = mocker.MagicMock()
+    response.status_code = status_code if status_code is not None else (200 if ok else 500)
+    # requests derives `ok` from the status, and it is True for a 3xx too: that is exactly what the probe must not take
+    # for an answer, so the two are set independently.
     response.ok = ok
-    response.status_code = 200 if ok else 500
     response.json.return_value = payload
     response.json.side_effect = None if payload is not None else ValueError("no json")
     return mocker.patch("requests.Session.send", return_value=response)
@@ -2568,6 +2664,14 @@ def _probe_response(mocker, ok=True, payload=None, raise_error=None):
         pytest.param("", {}, False, id="no-server"),
         pytest.param(GATEWAY_URL, {"raise_error": requests.ConnectionError("boom")}, False, id="unreachable"),
         pytest.param(GATEWAY_URL, {"ok": False, "payload": [{"key": "ABC"}]}, False, id="non-ok-status"),
+        # A 302 carrying a JSON array: `Response.ok` is True for a 3xx, redirects are not followed, and a redirect body
+        # is no evidence of anonymous readability.
+        pytest.param(
+            GATEWAY_URL,
+            {"status_code": 302, "payload": [{"key": "ABC"}]},
+            False,
+            id="redirect-with-a-list-body",
+        ),
         pytest.param(GATEWAY_URL, {"payload": None}, False, id="non-json-body"),
         pytest.param(GATEWAY_URL, {"payload": {"key": "ABC"}}, False, id="json-object"),
         pytest.param(GATEWAY_URL, {"payload": []}, False, id="empty-list"),
@@ -2831,6 +2935,32 @@ def test_get_jira_mismatch_config_cloud_id_opt_out_requires_url(mocker, monkeypa
     assert result.exit_code == 1
     assert "Jira url and token are required." in "\n".join(_logged(mock_logger, "error"))
     mock_jira_cls.assert_not_called()
+
+
+def test_get_jira_mismatch_null_config_token_still_mints(mocker, monkeypatch, tmp_path):
+    mock_logger = _patch_logger(mocker)
+    config_file = tmp_path / "jira_cfg.yaml"
+    # A config file with an OAuth pair may leave the pre-minted token out (`token:` parses to None): the run must mint
+    # instead of dying in the log-secret filter before it can.
+    config_file.write_text(
+        "pyutils-jira:\n"
+        f'  cloud_id: "{CLOUD_ID}"\n'
+        "  token:\n"
+        f'  client_id: "{OAUTH_CLIENT_ID}"\n'
+        f'  client_secret: "{OAUTH_CLIENT_SECRET}"\n'
+    )
+    _clear_jira_env(monkeypatch)
+    _mock_anonymous_probe(mocker)
+    mock_mint = mocker.patch("apps.jira_utils.jira_information.mint_atlassian_token", return_value="minted-token")
+    mock_jira_cls = mocker.patch("apps.jira_utils.jira_information.JIRA")
+    mocker.patch("apps.jira_utils.jira_information.get_jiras_from_python_files", return_value={})
+
+    result = CliRunner().invoke(get_jira_mismatch, ["--config-file-path", str(config_file), "--check-auth"])
+
+    assert result.exit_code == 0, _logged(mock_logger, "error")
+    mock_mint.assert_called_once_with(client_id=OAUTH_CLIENT_ID, client_secret=OAUTH_CLIENT_SECRET)
+    # The minted access token is what the client gets, exactly as for a run with a pre-minted one.
+    mock_jira_cls.assert_called_once_with(server=GATEWAY_URL, token_auth="minted-token")
 
 
 def test_get_jira_mismatch_cloud_id_builds_gateway_client(mocker):
