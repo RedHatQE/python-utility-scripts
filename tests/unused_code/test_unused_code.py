@@ -5,6 +5,7 @@ import pytest
 from simple_logger.logger import get_logger
 
 from apps.unused_code.unused_code import _git_grep, get_unused_functions, process_file
+from apps.utils import all_python_files
 from tests.utils import get_cli_runner
 
 LOGGER = get_logger(name=__name__)
@@ -291,3 +292,33 @@ def test_unused_code_not_a_git_repo(tmp_path):
         assert isinstance(result.exception, SystemExit)
     finally:
         os.chdir(original_cwd)
+
+
+def test_all_python_files_skips_worktree_agent_and_build_trees(tmp_path):
+    for relative_path in ("pkg/a.py", ".worktrees/b/c.py", ".pi/tmp/d.py", "node_modules/e.py", "build/f.py"):
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("")
+
+    # A second checkout (.worktrees), an agent scratch tree and build output hold the same sources again, so the
+    # scan must see each real file once.
+    found = {os.path.relpath(path, tmp_path) for path in all_python_files(directory=tmp_path)}
+    assert found == {"pkg/a.py"}
+
+
+def test_all_python_files_scans_under_an_excluded_ancestor_name(tmp_path):
+    for relative_path in (
+        "build-tools/repo/pkg/a.py",
+        ".worktrees/b.py",
+        "node_modules/c.py",
+        ".venv/d.py",
+    ):
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("")
+
+    found = {os.path.relpath(path, tmp_path) for path in all_python_files(directory=tmp_path)}
+
+    # Only a directory name is excluded, never a path component: a checkout living under ".../build-tools/..."
+    # still gets scanned, while a worktree, node_modules and a virtualenv are pruned by name.
+    assert found == {"build-tools/repo/pkg/a.py"}

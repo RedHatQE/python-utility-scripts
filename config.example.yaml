@@ -10,10 +10,20 @@ pyutils-polarion-set-automated:
   project_id: "ABCDEF"
   branch: "origin/main"
 pyutils-jira:
-  url: <jira url>
   token: <jira token>
-  user: <jira user email>
   cloud: false
+  # Service-account auth: set cloud_id to use an Atlassian Cloud service-account scoped API token (Bearer against
+  # https://api.atlassian.com/ex/jira/<cloud_id>). url and user are then ignored for API calls (a non-gateway url
+  # logs a warning); a site url still narrows /browse/<KEY> link matching, while the gateway url serves API calls.
+  cloud_id: ""
+  # Uncomment both to select the OAuth 2.0 client-credentials service-account flavour; cloud_id is then required.
+  # client_id: <oauth client id>
+  # client_secret: ATOA...
+  # Data Center PAT and Cloud basic auth only: uncomment url (and user for cloud basic auth).
+  # url: <jira url>
+  # user: <jira user email>
+  # Fallback only: the CLI defaults for --resolved-statuses and --issue-pattern are always non-empty,
+  # so these values are currently overridden.
   resolved_statuses:
   - verified
   - release pending
@@ -22,6 +32,9 @@ pyutils-jira:
   skip_project_ids:
     - ABC
     - DEF
-  jira_target_versions:
+  # Read from this file when --target-versions is not passed.
+  target_versions:
     - 1.0.0
+  # Unlike every other option, this value resolves as config_dict.get(key, cli_value): a value here wins even
+  # over an explicitly passed --version-string-not-targeted-jiras flag.
   version_string_not_targeted_jiras: "not-targeted"
