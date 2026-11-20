@@ -28,6 +28,8 @@ pyutils-unusedcode -d /path/to/your/project
 
 **Note:** When using `--file-path` or `--directory`, the tool will analyze files from any git repository, not just the current working directory.
 
+A directory is skipped by its **name**, never by a path substring, so a checkout living under e.g. `/tmp/build-tools/` is still analyzed. Excluded names: `.git`, `.tox`, `.venv`, `venv`, `.pytest_cache`, `site-packages`, `.mypy_cache`, `.worktrees`, `.pi`, `node_modules`, `build`, `dist`.
+
 ## Command-Line Options
 
 | Option | Short | Description |

@@ -20,15 +20,27 @@ from apps.jira_utils.jira_information import (
     AUTH_MODE_CLOUD_BASIC,
     AUTH_MODE_DATACENTER_PAT,
     AUTH_MODE_SERVICE_ACCOUNT,
+    SA_GATEWAY_HOST,
+    SA_GATEWAY_URL_PREFIX,
     SA_GATEWAY_URL_TEMPLATE,
     TOKEN_REFRESH_MARGIN_SECONDS,
     JiraTokenMintError,
     _auth_failure_hint,
     _check_jira_auth,
     _credential_rejected,
+    _effective_cloud_id,
+    _error_detail,
+    _install_log_secret_filter,
+    _is_gateway_url,
+    _jira_auth_mode,
     _jira_browse_url,
+    _mask_server,
+    _mask_userinfo,
+    _project_endpoint_is_anonymous,
     _report_jira_auth_error,
+    _reset_log_secret_filter,
     _retryable_jira_error,
+    _strip_userinfo,
     build_jira_client,
     get_issue,
     get_jira_ids_from_file_content,
@@ -38,7 +50,6 @@ from apps.jira_utils.jira_information import (
     process_jira_command_line_config_file,
     resolve_jira_server,
 )
-from apps.utils import all_python_files
 
 LOGGER = get_logger(name=__name__)
 BASE_COMMAND = "uv run apps/jira_utils/jira_information.py --verbose  "
@@ -48,6 +59,11 @@ GATEWAY_URL = SA_GATEWAY_URL_TEMPLATE.format(cloud_id=CLOUD_ID)
 # Only human-readable output is masked; the client still receives GATEWAY_URL.
 MASKED_CLOUD_ID = "<cloud-id>"
 MASKED_GATEWAY_URL = SA_GATEWAY_URL_TEMPLATE.format(cloud_id=MASKED_CLOUD_ID)
+# A supplied url can embed a credential in its userinfo component, which the transport logs quote verbatim.
+USERINFO_PASSWORD = "sup3r-s3cret"  # pragma: allowlist secret
+USERINFO_GATEWAY_URL = f"https://user:{USERINFO_PASSWORD}@api.atlassian.com/ex/jira/{CLOUD_ID}"
+USERINFO_DATACENTER_URL = f"https://user:{USERINFO_PASSWORD}@issues.redhat.com"
+USERINFO_SITE_URL = f"https://user:{USERINFO_PASSWORD}@site.atlassian.net"
 # --cloud-id "" overrides the JIRA_CLOUD_ID env default so the run stays env independent.
 DATACENTER_ARGS = ("--url", "https://issues.redhat.com", "--token", "t", "--cloud-id", "")
 # A pre-minted scoped API token: no client id/secret, so only the cloud id marks it service-account auth.
@@ -61,40 +77,90 @@ JIRA_SOURCE_PATH = os.path.abspath(
 )
 
 
+def _mock_anonymous_probe(mocker, status_code=401, projects=None):
+    """Mock the header-less project probe a --check-auth run makes, rejected by default (offline).
+
+    Returns the mocked session, so a test can assert on the prepared request the probe sent.
+    """
+    response = mocker.MagicMock()
+    response.status_code = status_code
+    response.ok = 200 <= status_code < 300
+    response.json.return_value = projects if projects is not None else []
+    mock_session = mocker.patch("apps.jira_utils.jira_information.requests.Session").return_value
+    # A plain dict for the prepared headers: the probe drops a stray Authorization header from it before sending.
+    mock_session.prepare_request.return_value.headers = {}
+    mock_session.send.return_value = response
+    return mock_session
+
+
 def _run_jira_command(mocker, *args):
     """Invoke the click command with the Jira client and scan path mocked out."""
     mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
     mock_jira_cls = mocker.patch("apps.jira_utils.jira_information.JIRA")
     mock_get_jiras = mocker.patch("apps.jira_utils.jira_information.get_jiras_from_python_files", return_value={})
+    # --check-auth can probe the project endpoint without a header; that request must never leave the process.
+    _mock_anonymous_probe(mocker)
     result = CliRunner().invoke(get_jira_mismatch, list(args))
     return result, mock_jira_cls, mock_get_jiras
 
 
-def _run_oauth_command(mocker, *args, myself_error=None, projects_error=None):
+def _run_oauth_command(
+    mocker,
+    *args,
+    myself_error=None,
+    projects_error=None,
+    projects_return=None,
+    anonymous_status=401,
+    anonymous_projects=None,
+    rest_api_version=None,
+):
     """Invoke the click command with the token mint and the Jira client mocked out (offline)."""
     mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+    _mock_anonymous_probe(mocker, status_code=anonymous_status, projects=anonymous_projects)
     mock_mint = mocker.patch("apps.jira_utils.jira_information.mint_atlassian_token", return_value="minted-token")
     mock_jira_cls = mocker.patch("apps.jira_utils.jira_information.JIRA")
+    # A real JIRA carries its REST API version in _options; the anonymous probe must follow it, so the mock must too.
+    mock_jira_cls.return_value._options = {"rest_api_version": rest_api_version} if rest_api_version else {}
     if myself_error is not None:
         mock_jira_cls.return_value.myself.side_effect = myself_error
     if projects_error is not None:
         mock_jira_cls.return_value.projects.side_effect = projects_error
+    if projects_return is not None:
+        mock_jira_cls.return_value.projects.return_value = projects_return
     mocker.patch("apps.jira_utils.jira_information.get_jiras_from_python_files", return_value={})
     result = CliRunner().invoke(get_jira_mismatch, list(args))
     return result, mock_jira_cls, mock_mint
 
 
-def _run_scan(mocker, scan_args, issues, per_issue_status, myself_side_effect=None):
-    """Run a scan over `issues`, where every issue fails with `per_issue_status`."""
+def _run_scan(
+    mocker,
+    scan_args,
+    issues,
+    per_issue_status=None,
+    myself_side_effect=None,
+    projects_side_effect=None,
+    projects_return=None,
+    per_issue_results=None,
+):
+    """Run a scan over `issues`, where every issue fails with `per_issue_status` unless `per_issue_results` is given."""
     mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
     mock_jira_cls = mocker.patch("apps.jira_utils.jira_information.JIRA")
     if myself_side_effect is not None:
         mock_jira_cls.return_value.myself.side_effect = myself_side_effect
+    if projects_side_effect is not None:
+        mock_jira_cls.return_value.projects.side_effect = projects_side_effect
+    if projects_return is not None:
+        mock_jira_cls.return_value.projects.return_value = projects_return
     mocker.patch("apps.jira_utils.jira_information.get_jiras_from_python_files", return_value={"file.py": issues})
-    mock_get_jira_information = mocker.patch(
-        "apps.jira_utils.jira_information.get_jira_information",
-        return_value=("file.py", f"error {per_issue_status}", per_issue_status),
-    )
+    if per_issue_results is not None:
+        mock_get_jira_information = mocker.patch(
+            "apps.jira_utils.jira_information.get_jira_information", side_effect=list(per_issue_results)
+        )
+    else:
+        mock_get_jira_information = mocker.patch(
+            "apps.jira_utils.jira_information.get_jira_information",
+            return_value=("file.py", f"error {per_issue_status}", per_issue_status),
+        )
     result = CliRunner().invoke(get_jira_mismatch, list(scan_args))
     return result, mock_jira_cls, mock_get_jira_information
 
@@ -165,9 +231,10 @@ def _empty_atlassian_token_cache():
 def _hermetic_jira_env(monkeypatch):
     """Drop the ambient Jira env and the option defaults frozen from it.
 
-    `cloud_id` is resolved from the env at call time and the other values arrive as os.getenv() click defaults that
-    were frozen at import, so both must be neutralised for a test to be independent of the developer's own Jira
-    credential. A test that wants an env-provided value sets it itself, which makes the dependency explicit.
+    `cloud_id` and the OAuth client pair are resolved from the env at call time, while url/token/user arrive as
+    os.getenv() click defaults that were frozen at import, so all of them must be neutralised for a test to be
+    independent of the developer's own Jira credential. A test that wants an env-provided value sets it itself,
+    which makes the dependency explicit.
     """
     _clear_jira_env(monkeypatch)
     _patch_option_defaults(monkeypatch, url=None, token=None, user=None, client_id=None, client_secret=None)
@@ -186,6 +253,38 @@ def _no_real_atlassian_mint(monkeypatch):
 
     monkeypatch.setattr("apps.jira_utils.jira_information.mint_atlassian_token", _blocked)
     monkeypatch.setattr("apps.jira_utils.jira_information.requests.post", _blocked)
+
+
+@pytest.fixture(autouse=True)
+def _restore_log_state():
+    """Undo what a CLI run leaves process-wide, so neither the record factory nor a logger level leaks on.
+
+    The transport logger levels are pinned for the test: `simple_logger` calls `logging.setLoggerClass` at import and
+    its logger defaults to INFO, so a `jira` logger created after another module's import is born at INFO and
+    `caplog.set_level(DEBUG)` (which only raises the root) would not let a DEBUG record through. Without this the
+    transport-filter tests pass or fail depending on collection order. The factory is restored by the reset helper
+    alone, so the production path is the one the suite exercises.
+    """
+    loggers = [logging.getLogger(name) for name in ("jira", "jira.resilientsession", "urllib3")]
+    saved_levels = [logger.level for logger in loggers]
+    for logger in loggers:
+        logger.setLevel(logging.DEBUG)
+
+    yield
+
+    _reset_log_secret_filter()
+    for logger, saved_level in zip(loggers, saved_levels):
+        logger.setLevel(saved_level)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_http(monkeypatch):
+    """Refuse any real HTTP call: every request here must be mocked, the anonymous project probe included."""
+
+    def _blocked(*args, **kwargs):
+        raise AssertionError("a real HTTP request was attempted: mock requests.get/post in this test")
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", _blocked)
 
 
 def _patch_token_post(mocker, payload=None, status_code=200):
@@ -692,6 +791,75 @@ def test_process_client_id_from_cli_wins_over_config(mocker, monkeypatch):
     assert result["client_secret"] == "config-client-secret"  # pragma: allowlist secret
 
 
+CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), "test_jira_cfg_file.yaml")
+
+
+def test_process_empty_oauth_options_opt_out_of_the_config_pair(mocker, monkeypatch):
+    _clear_jira_env(monkeypatch)
+    # The pair is in the env as well, so the opt-out has to beat both the env and the config file.
+    monkeypatch.setenv("JIRA_SA_CLIENT_ID", OAUTH_CLIENT_ID)
+    monkeypatch.setenv("JIRA_SA_CLIENT_SECRET", OAUTH_CLIENT_SECRET)
+    mock_logger = _patch_logger(mocker)
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={
+            "url": "https://issues.redhat.com",
+            "token": "config-token",
+            "cloud_id": CLOUD_ID,
+            "client_id": "config-client-id",
+            "client_secret": "config-client-secret",  # pragma: allowlist secret
+        },
+    )
+    mock_mint = mocker.patch("apps.jira_utils.jira_information.mint_atlassian_token", return_value="minted-token")
+    mock_jira_cls = mocker.patch("apps.jira_utils.jira_information.JIRA")
+    mocker.patch("apps.jira_utils.jira_information.get_jiras_from_python_files", return_value={})
+
+    # An explicit empty pair is the documented opt-out, so it must not be replaced by the env or the config pair.
+    result = CliRunner().invoke(
+        get_jira_mismatch, ["--config-file-path", CONFIG_FILE_PATH, "--client-id", "", "--client-secret", ""]
+    )
+
+    assert result.exit_code == 0, _logged(mock_logger, "error")
+    mock_mint.assert_not_called()
+    # The configured scoped token is what the run authenticates with.
+    mock_jira_cls.assert_called_once_with(server=GATEWAY_URL, token_auth="config-token")
+
+
+@pytest.mark.parametrize(
+    "env_pair,expected",
+    [
+        pytest.param(True, (OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET), id="env-wins-over-config"),
+        pytest.param(False, ("config-client-id", "config-client-secret"), id="config-when-env-unset"),
+    ],
+)
+def test_process_omitted_oauth_options_fall_back_to_env_then_config(mocker, monkeypatch, env_pair, expected):
+    _clear_jira_env(monkeypatch)
+    if env_pair:
+        monkeypatch.setenv("JIRA_SA_CLIENT_ID", OAUTH_CLIENT_ID)
+        monkeypatch.setenv("JIRA_SA_CLIENT_SECRET", OAUTH_CLIENT_SECRET)
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={"client_id": "config-client-id", "client_secret": "config-client-secret"},
+    )
+
+    # Neither option is passed: the omitted state (None) is the one that falls back, in env-then-config order.
+    result = process_jira_command_line_config_file(
+        config_file_path="/path",
+        url="",
+        token="",
+        issue_pattern="*",
+        resolved_statuses=[],
+        version_string_not_targeted_jiras="",
+        target_versions=[],
+        skip_projects=[],
+        user="",
+        cloud=None,
+        cloud_id=CLOUD_ID,
+    )
+
+    assert (result["client_id"], result["client_secret"]) == expected
+
+
 @pytest.mark.parametrize(
     "env_var",
     [pytest.param("JIRA_CLOUD_ID", id="jira-cloud-id"), pytest.param("ATLASSIAN_OAUTH_CLOUD_ID", id="oauth-alias")],
@@ -755,6 +923,14 @@ def test_process_oauth_credential_cloud_id_from_oauth_env_alias(mocker, monkeypa
             "",
             SA_GATEWAY_URL_TEMPLATE.format(cloud_id="cloud-id"),
             id="gateway_url_unchanged",
+        ),
+        # A path below the cloud id is not the server: python-jira appends its own `/rest/api/2/...` to whatever it
+        # is given, so the id is derived from the url and the canonical gateway url is rebuilt.
+        pytest.param(
+            f"{SA_GATEWAY_URL_TEMPLATE.format(cloud_id='cloud-id')}/rest/api/2",
+            "",
+            SA_GATEWAY_URL_TEMPLATE.format(cloud_id="cloud-id"),
+            id="gateway_url_deeper_path_canonicalised",
         ),
         pytest.param("https://example.atlassian.net", "", "https://example.atlassian.net", id="site_url_unchanged"),
     ],
@@ -982,22 +1158,10 @@ def test_auth_failure_hint_pre_minted_service_account():
 
 
 @pytest.mark.parametrize(
-    "env_var,option_name,expected",
-    [
-        pytest.param("ATLASSIAN_OAUTH_CLIENT_ID", "client_id", OAUTH_CLIENT_ID, id="client-id-alias"),
-        pytest.param("JIRA_OAUTH_CLIENT_SECRET", "client_secret", OAUTH_CLIENT_SECRET, id="client-secret-alias"),
-    ],
-)
-def test_oauth_credential_env_aliases_are_option_defaults(monkeypatch, env_var, option_name, expected):
-    # The hermetic fixture drops the primary JIRA_SA_* names, so the alias alone has to supply the default.
-    monkeypatch.setenv(env_var, expected)
-
-    assert _source_option_defaults()[option_name] == expected
-
-
-@pytest.mark.parametrize(
     "env_var,alias_var,option_name,expected",
     [
+        pytest.param("ATLASSIAN_OAUTH_CLIENT_ID", None, "client_id", OAUTH_CLIENT_ID, id="client-id-alias"),
+        pytest.param("JIRA_OAUTH_CLIENT_SECRET", None, "client_secret", OAUTH_CLIENT_SECRET, id="client-secret-alias"),
         pytest.param("JIRA_SA_CLIENT_ID", "ATLASSIAN_OAUTH_CLIENT_ID", "client_id", OAUTH_CLIENT_ID, id="client-id"),
         pytest.param(
             "JIRA_SA_CLIENT_SECRET",
@@ -1008,20 +1172,64 @@ def test_oauth_credential_env_aliases_are_option_defaults(monkeypatch, env_var, 
         ),
     ],
 )
-def test_oauth_credential_primary_env_names_are_option_defaults(monkeypatch, env_var, alias_var, option_name, expected):
-    # The click defaults are evaluated at import time, so only re-executing the module body can prove the env read.
+def test_oauth_credential_env_names_resolve_at_call_time(
+    mocker, monkeypatch, env_var, alias_var, option_name, expected
+):
+    # The click defaults are None by design, so the env read happens when the config is resolved. The hermetic
+    # fixture drops the primary JIRA_SA_* names, so the alias param can only be supplied by the alias.
     monkeypatch.setenv(env_var, expected)
-    assert _source_option_defaults()[option_name] == expected
+    if alias_var:
+        # Both spellings set: the primary name wins, so the alias value must never be picked up.
+        monkeypatch.setenv(alias_var, "alias-value-that-must-lose")
+    # The resolved-auth log line is not under test and repeating it would trip simple_logger's process-wide
+    # DuplicateFilter into a summary line that leaks into the next test's caplog records.
+    _patch_logger(mocker)
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_util_config",
+        return_value={"client_id": "config-client-id", "client_secret": "config-client-secret"},
+    )
 
-    # Both spellings set: the primary name wins, so the alias must not change the resolved default.
-    monkeypatch.setenv(alias_var, "alias-value-that-must-lose")
-    assert _source_option_defaults()[option_name] == expected
+    result = process_jira_command_line_config_file(
+        config_file_path="/path",
+        url="",
+        token="",
+        issue_pattern="*",
+        resolved_statuses=[],
+        version_string_not_targeted_jiras="",
+        target_versions=[],
+        skip_projects=[],
+        user="",
+        cloud=None,
+        cloud_id=CLOUD_ID,
+    )
+
+    # Env beats the config pair; the member with no env value still falls back to the config pair.
+    expected_pair = {"client_id": "config-client-id", "client_secret": "config-client-secret"}
+    expected_pair[option_name] = expected
+    assert (result["client_id"], result["client_secret"]) == (
+        expected_pair["client_id"],
+        expected_pair["client_secret"],
+    )
+
+
+@pytest.mark.parametrize("env_var", ["JIRA_SA_CLIENT_ID", "JIRA_SA_CLIENT_SECRET"])
+def test_oauth_credential_options_do_not_freeze_the_env_as_a_default(monkeypatch, env_var):
+    # A getenv() default frozen at import cannot be told apart from an explicit option, so it would bypass both the
+    # explicit-empty opt-out and the call-time resolution; the option defaults must stay None whatever the env says.
+    monkeypatch.setenv(env_var, "env-value")
+
+    defaults = _source_option_defaults()
+
+    assert defaults["client_id"] is None
+    assert defaults["client_secret"] is None
 
 
 @pytest.mark.parametrize(
     "url,expected",
     [
         pytest.param(SA_GATEWAY_URL_TEMPLATE.format(cloud_id="cloud-id"), "", id="gateway_url_dropped"),
+        # A userinfo-bearing gateway url still encodes its cloud id, so the prefix must stay host-agnostic.
+        pytest.param(USERINFO_GATEWAY_URL, "", id="userinfo_gateway_url_dropped"),
         pytest.param("https://redhat.atlassian.net", "https://redhat.atlassian.net", id="site_url_unchanged"),
         pytest.param("", "", id="empty_url_unchanged"),
     ],
@@ -1280,7 +1488,7 @@ def test_jira_api_error(mocker):
         file_name="",
     )
 
-    assert result == ("", "404 JiraError status code: 404, details: Issue not found].", 404)
+    assert result == ("", "404 JiraError status code: 404, details: Issue not found.", 404)
 
 
 def test_get_jira_information_retry_error_reports_per_issue_error(mocker, caplog):
@@ -1300,7 +1508,7 @@ def test_get_jira_information_retry_error_reports_per_issue_error(mocker, caplog
         file_name="file.py",
     )
 
-    assert result == ("file.py", "ABC-500 JiraError status code: 500, details: Server error].", 500)
+    assert result == ("file.py", "ABC-500 JiraError status code: 500, details: Server error.", 500)
     # No traceback: JIRAError.__str__ re-renders the raw body and headers, and this must stay a single line.
     assert [record for record in caplog.records if record.exc_info] == []
     assert "Traceback" not in caplog.text
@@ -1323,7 +1531,7 @@ def test_jira_auth_error_keeps_per_issue_text_short(mocker, status_code):
         file_name="",
     )
 
-    details = result[1].removeprefix(f"ABC-1 JiraError status code: {status_code}, details: ").removesuffix("].")
+    details = result[1].removeprefix(f"ABC-1 JiraError status code: {status_code}, details: ").removesuffix(".")
     # Only a confirmed credential rejection omits the body; a per-issue 401/403 keeps it, collapsed and bounded.
     assert set(details) == {"x"}
     assert len(details) == 200
@@ -1349,7 +1557,7 @@ def test_jira_per_issue_forbidden_surfaces_permission_gap_body(mocker):
     )
 
     # A 403 with a healthy credential is a permission gap, so the body must reach the user.
-    assert result[1] == "ABC-1 JiraError status code: 403, details: You do not have permission to see this issue]."
+    assert result[1] == "ABC-1 JiraError status code: 403, details: You do not have permission to see this issue."
     assert result[2] == 403
 
 
@@ -1537,6 +1745,8 @@ def test_cloud_id_never_appears_in_logs(mocker, monkeypatch, caplog):
     caplog.set_level(logging.DEBUG)
     _clear_jira_env(monkeypatch)
     mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+    # The project-visibility verdict below makes the header-less probe, which must never leave the process.
+    _mock_anonymous_probe(mocker)
 
     def assert_masked(*expected):
         """Assert every record avoids CLOUD_ID while the given text was actually logged."""
@@ -1584,9 +1794,10 @@ def test_cloud_id_never_appears_in_logs(mocker, monkeypatch, caplog):
     )
     assert_masked(f"Jira authentication OK - mode: {AUTH_MODE_SERVICE_ACCOUNT}, server: {MASKED_GATEWAY_URL}")
 
-    # A scope-limited credential is 401/403 on /myself, so its success line is the project-visibility variant.
+    # A scope-limited credential is 401/403 on /myself, so its success line is the project-visibility variant. An
+    # empty project list proves nothing, so the (non-empty) list is what makes the probe conclusive.
     mock_jira.myself.side_effect = JIRAError(status_code=401, text="Unauthorized")
-    mock_jira.projects.return_value = []
+    mock_jira.projects.return_value = [{"key": "ABC"}]
     _check_jira_auth(
         jira_obj=mock_jira,
         jira_config_dict={"url": "", "cloud": False, "cloud_id": CLOUD_ID, "token": "t"},
@@ -1620,6 +1831,515 @@ def test_cloud_id_never_appears_in_logs(mocker, monkeypatch, caplog):
             cloud_id=f"{CLOUD_ID}!",
         )
     assert_masked("Invalid Jira cloud id", MASKED_CLOUD_ID)
+
+
+REPORT_TOKEN = "s3cr3t-token-value"
+# The cloud id shown up-front in the error detail, split across lines (a wrapping proxy) and past the 200-char cut.
+CLOUD_ID_ECHOES = (
+    f"denied for cloud {CLOUD_ID} with {REPORT_TOKEN}",
+    "denied for cloud " + "\n".join(CLOUD_ID),
+    "z" * 180 + CLOUD_ID,
+)
+
+
+@pytest.mark.parametrize("body", [pytest.param(body, id=f"body-{index}") for index, body in enumerate(CLOUD_ID_ECHOES)])
+@pytest.mark.parametrize(
+    "jira_config_dict",
+    [
+        pytest.param({"url": "", "cloud": False, "cloud_id": CLOUD_ID, "token": REPORT_TOKEN}, id="cloud-id-option"),
+        pytest.param({"url": GATEWAY_URL, "cloud": False, "cloud_id": "", "token": REPORT_TOKEN}, id="gateway-url"),
+    ],
+)
+def test_report_jira_auth_error_masks_the_cloud_id_in_the_detail(caplog, jira_config_dict, body):
+    caplog.set_level(logging.DEBUG)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _report_jira_auth_error(exp=JIRAError(status_code=401, text=body), jira_config_dict=jira_config_dict)
+
+    assert exc_info.value.code == 1
+    messages = [record.getMessage() for record in caplog.records]
+    detail_messages = [message for message in messages if ": 401 " in message]
+    assert len(detail_messages) == 1
+    detail = detail_messages[0].split(": 401 ", 1)[1]
+    # The cloud id is masked whether it came from --cloud-id or from the gateway url it is embedded in.
+    assert CLOUD_ID not in caplog.text
+    assert MASKED_CLOUD_ID in detail
+    assert REPORT_TOKEN not in caplog.text
+    # Masking runs on the full body, so the 200-character bound still holds and a cut through the echoed id leaks
+    # nothing: a truncation-first implementation would leave a prefix of the cloud id in the message.
+    assert len(detail) <= 200
+    assert CLOUD_ID[:20] not in detail
+
+
+@pytest.mark.parametrize(
+    "derived_cloud_id",
+    [pytest.param(CLOUD_ID, id="uuid")],
+)
+def test_error_detail_redacts_a_cloud_id_derived_from_a_gateway_url(caplog, derived_cloud_id):
+    caplog.set_level(logging.DEBUG)
+    # A gateway url with a trailing slash still encodes only the id.
+    gateway_url = f"{SA_GATEWAY_URL_TEMPLATE.format(cloud_id=derived_cloud_id)}/"
+
+    with pytest.raises(SystemExit) as exc_info:
+        _report_jira_auth_error(
+            exp=JIRAError(status_code=401, text=f"denied for tenant {derived_cloud_id}"),
+            jira_config_dict={"url": gateway_url, "cloud": False, "cloud_id": "", "token": REPORT_TOKEN},
+        )
+
+    assert exc_info.value.code == 1
+    detail_messages = [record.getMessage() for record in caplog.records if ": 401 " in record.getMessage()]
+    assert len(detail_messages) == 1
+    detail = detail_messages[0].split(": 401 ", 1)[1]
+    # The bare id is what a body would echo, so that is what the redaction has to match.
+    assert derived_cloud_id not in detail
+    assert MASKED_CLOUD_ID in detail
+    assert derived_cloud_id not in caplog.text
+
+
+def test_error_detail_redacts_a_cloud_id_derived_from_a_userinfo_gateway_url(caplog):
+    caplog.set_level(logging.DEBUG)
+
+    # The gateway url supplies the cloud id only through its own path, and its userinfo must not hide it from the
+    # derivation: the id is then redacted out of the body exactly like a --cloud-id one, and the password is masked.
+    with pytest.raises(SystemExit) as exc_info:
+        _report_jira_auth_error(
+            exp=JIRAError(status_code=401, text=f"denied for tenant {CLOUD_ID}"),
+            jira_config_dict={"url": USERINFO_GATEWAY_URL, "cloud": False, "cloud_id": "", "token": REPORT_TOKEN},
+        )
+
+    assert exc_info.value.code == 1
+    detail_messages = [record.getMessage() for record in caplog.records if ": 401 " in record.getMessage()]
+    assert len(detail_messages) == 1
+    detail = detail_messages[0].split(": 401 ", 1)[1]
+    assert MASKED_CLOUD_ID in detail
+    assert CLOUD_ID not in caplog.text
+    assert USERINFO_PASSWORD not in caplog.text
+    assert "user:" not in caplog.text
+
+
+@pytest.mark.parametrize("status_code", [pytest.param(401, id="401"), pytest.param(403, id="403")])
+def test_error_detail_masks_the_userinfo_of_a_body_url(caplog, status_code):
+    caplog.set_level(logging.DEBUG)
+    # A transport error and an echoing proxy both quote the url whole, credential included.
+    body = (
+        f"Invalid URL {USERINFO_SITE_URL}/: No host supplied "
+        f"for tenant {CLOUD_ID} with token {REPORT_TOKEN} " + "x" * 300
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        _report_jira_auth_error(
+            exp=JIRAError(status_code=status_code, text=body),
+            jira_config_dict={"url": "", "cloud": False, "cloud_id": CLOUD_ID, "token": REPORT_TOKEN},
+        )
+
+    assert exc_info.value.code == 1
+    detail_messages = [record.getMessage() for record in caplog.records if f": {status_code} " in record.getMessage()]
+    assert len(detail_messages) == 1
+    detail = detail_messages[0].split(f": {status_code} ", 1)[1]
+    # The url stays readable while its userinfo is gone, before anything else touches the body.
+    assert detail.startswith("Invalid URL https://site.atlassian.net/: No host supplied")
+    assert "user:" not in detail
+    assert "sup3r-s3cret" not in caplog.text
+    # The same string still gets the token and cloud-id redaction, and the masking does not cost it the 200 cap.
+    assert "with token ***" in detail
+    assert MASKED_CLOUD_ID in detail
+    assert REPORT_TOKEN not in caplog.text
+    assert CLOUD_ID not in caplog.text
+    assert len(detail) == 200
+
+
+def test_discarded_site_url_is_logged_without_its_userinfo(mocker):
+    mock_logger = _patch_logger(mocker)
+    mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+
+    process_jira_command_line_config_file(
+        config_file_path="/path",
+        url=USERINFO_SITE_URL,
+        token="t",
+        issue_pattern="*",
+        resolved_statuses=[],
+        version_string_not_targeted_jiras="",
+        target_versions=[],
+        skip_projects=[],
+        user="",
+        cloud=None,
+        cloud_id=CLOUD_ID,
+    )
+
+    discarded = [message for message in _logged(mock_logger, "info") if "discarding supplied Jira url" in message]
+    assert len(discarded) == 1
+    # The url is only logged to say it was discarded, so the embedded credential must not come along.
+    assert "https://site.atlassian.net" in discarded[0]
+    assert "sup3r-s3cret" not in discarded[0]
+    assert "user:" not in discarded[0]
+
+
+@pytest.mark.parametrize(
+    "server,expected_server,expected_userinfo",
+    [
+        # urlsplit and requests treat the LAST "@" as the userinfo delimiter, so a password holding one must be
+        # masked in full: stopping at the first one leaves the tail ("ss@issues.redhat.com") in the log.
+        pytest.param(
+            "https://user:p@ss@issues.redhat.com",
+            "https://issues.redhat.com",
+            "https://issues.redhat.com",
+            id="password-with-at",
+        ),
+        # An encoded "@" never splits the authority, so it is one userinfo component like any other.
+        pytest.param(
+            "https://user:p%40ss@issues.redhat.com",  # pragma: allowlist secret
+            "https://issues.redhat.com",
+            "https://issues.redhat.com",
+            id="encoded-at",
+        ),
+        pytest.param(
+            "https://issues.redhat.com",
+            "https://issues.redhat.com",
+            "https://issues.redhat.com",
+            id="no-userinfo-unchanged",
+        ),
+        # The cloud id is still masked by _mask_server, and only after the userinfo is dropped: the gateway prefix
+        # check needs it gone first.
+        pytest.param(
+            f"https://user:p@ss@api.atlassian.com/ex/jira/{CLOUD_ID}",
+            MASKED_GATEWAY_URL,
+            f"{SA_GATEWAY_URL_PREFIX}{CLOUD_ID}",
+            id="gateway-url",
+        ),
+    ],
+)
+def test_mask_server_drops_the_whole_userinfo(server, expected_server, expected_userinfo):
+    assert _mask_server(server=server) == expected_server
+    assert _strip_userinfo(url=server) == expected_userinfo
+
+
+def test_mask_userinfo_leaves_a_free_form_user_at_host_alone():
+    # Error text is passed in whole, so the url must be delimited by a scheme and its authority: a bare
+    # "user@host" after whitespace is a mail address in the message, not a credential.
+    text = "connection failed for https://user:p@ss@site.atlassian.net as jdoe@issues.redhat.com"
+    expected = "connection failed for https://site.atlassian.net as jdoe@issues.redhat.com"
+
+    assert _mask_userinfo(text=text) == expected
+    # Only a real url has an authority to parse, so a bare address is never taken for a credential.
+    assert _strip_userinfo(url="jdoe@issues.redhat.com") == "jdoe@issues.redhat.com"
+
+
+@pytest.mark.parametrize(
+    "server,expected",
+    [
+        # requests accepts a space in a userinfo password and sends it as Basic auth, so urlsplit's whole authority
+        # has to be dropped: a pattern match over the authority stops at the space and leaks the credential.
+        pytest.param("https://bob:ab cd@jira.example.com/x", "https://jira.example.com/x", id="password-with-space"),
+        # urlsplit raises on an authority holding an unmatched bracket, so the parse-based drop cannot run: brackets
+        # survive requests' requote_uri unencoded, so such a password works with the client and must still be dropped.
+        pytest.param("https://user:pa[ss@site.atlassian.net", "https://site.atlassian.net", id="bracketed-userinfo"),
+        # An "@" after the path or in the query is not a userinfo, and the host must survive untouched.
+        pytest.param("https://jira.example.com?q=a@b", "https://jira.example.com?q=a@b", id="query-with-at"),
+        pytest.param("https://jira.example.com/x?a=b@c", "https://jira.example.com/x?a=b@c", id="path-and-query"),
+    ],
+)
+def test_strip_userinfo_parses_the_authority(server, expected):
+    assert _strip_userinfo(url=server) == expected
+    assert _mask_server(server=server) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # A JSON body quoting a url: the quote delimits the url, so the email address in the next key is not eaten.
+        pytest.param(
+            '{"self":"https://x.atlassian.net","emailAddress":"a@b.c"}',
+            '{"self":"https://x.atlassian.net","emailAddress":"a@b.c"}',
+            id="json-body-quoting-a-url",
+        ),
+        pytest.param(
+            "see https://bob:ab-cd@jira.example.com/x for details",  # pragma: allowlist secret
+            "see https://jira.example.com/x for details",
+            id="url-in-prose",
+        ),
+        # A `,` is legal unencoded in a url (requests' requote_uri leaves it alone), so it cannot delimit one: the
+        # credential must be stripped here exactly as _strip_userinfo strips it from the url on its own.
+        pytest.param(
+            "see https://bob:ab-cd@jira.example.com/x, then wait",  # pragma: allowlist secret
+            "see https://jira.example.com/x, then wait",
+            id="url-followed-by-a-comma",
+        ),
+        pytest.param(
+            "(see https://bob:ab-cd@jira.example.com/x)",  # pragma: allowlist secret
+            "(see https://jira.example.com/x)",
+            id="url-in-parentheses",
+        ),
+    ],
+)
+def test_mask_userinfo_delimits_a_url_inside_free_form_text(text, expected):
+    assert _mask_userinfo(text=text) == expected
+
+
+@pytest.mark.parametrize(
+    "gateway_url",
+    [
+        pytest.param(f"HTTPS://API.Atlassian.com/ex/jira/{CLOUD_ID}", id="uppercase-scheme-and-host"),
+        pytest.param(f"https://{SA_GATEWAY_HOST}:443/ex/jira/{CLOUD_ID}", id="explicit-default-port"),
+        pytest.param(f"HTTPS://{SA_GATEWAY_HOST}:443/EX/JIRA/{CLOUD_ID}", id="uppercase-path"),
+    ],
+)
+def test_gateway_url_is_recognised_whatever_its_case_and_port(gateway_url):
+    assert _is_gateway_url(url=gateway_url) is True
+    # All three decisions agree, or the cloud id leaks from the very lines that mask the url.
+    assert _mask_server(server=gateway_url) == MASKED_GATEWAY_URL
+    assert _effective_cloud_id(url=gateway_url, cloud_id="") == CLOUD_ID
+    mode, _ = _jira_auth_mode(url=gateway_url, cloud=False, cloud_id="")
+    assert mode == AUTH_MODE_SERVICE_ACCOUNT
+    # A query that merely mentions the gateway is not one, so it cannot mislabel the auth mode either.
+    assert _is_gateway_url(url=f"https://evil.example?a=@api.atlassian.com/ex/jira/{CLOUD_ID}") is False
+
+
+@pytest.mark.parametrize(
+    "gateway_url",
+    [
+        # requests resolves a trailing-dot FQDN to the same host, so the cloud id must not be echoed for it.
+        pytest.param(f"https://{SA_GATEWAY_HOST}./ex/jira/{CLOUD_ID}", id="trailing-dot-fqdn"),
+    ],
+)
+def test_gateway_url_with_a_trailing_dot_host_is_recognised(gateway_url):
+    assert _is_gateway_url(url=gateway_url) is True
+    assert _effective_cloud_id(url=gateway_url, cloud_id="") == CLOUD_ID
+    assert _mask_server(server=gateway_url) == MASKED_GATEWAY_URL
+
+
+@pytest.mark.parametrize(
+    "server",
+    [
+        pytest.param(f"https://{SA_GATEWAY_HOST}", id="bare-gateway-host"),
+        pytest.param(f"https://{SA_GATEWAY_HOST}/", id="bare-gateway-host-trailing-slash"),
+    ],
+)
+def test_the_bare_gateway_host_is_a_gateway_url_with_no_id(server):
+    # Failing fast is the point: taken for a Data Center url it silently switches the run to PAT mode.
+    assert _is_gateway_url(url=server) is True
+    mode, _ = _jira_auth_mode(url=server, cloud=False, cloud_id="")
+    assert mode == AUTH_MODE_SERVICE_ACCOUNT
+    assert _effective_cloud_id(url=server, cloud_id="") == ""
+    # There is no id segment, so nothing is rewritten into a path the input never had.
+    assert _mask_server(server=server) == server
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        pytest.param(f"https://{SA_GATEWAY_HOST}:notaport/ex/jira/{CLOUD_ID}", id="non-numeric-port"),
+        # urlsplit itself raises ValueError here, and these helpers exist to render a bad url safely, never to crash.
+        pytest.param("https://[bad", id="unparseable-authority"),
+    ],
+)
+def test_url_helpers_treat_a_malformed_url_as_a_plain_url(url):
+    assert _is_gateway_url(url=url) is False
+    assert _strip_userinfo(url=url) == url
+    assert _mask_server(server=url) == url
+
+
+def test_a_path_merely_starting_with_the_gateway_prefix_is_not_a_gateway_url():
+    url = f"https://{SA_GATEWAY_HOST}/ex/jirafoo/{CLOUD_ID}"
+
+    # _effective_cloud_id matches /ex/jira/ only, so a looser gateway predicate fails the run with a misleading
+    # "missing its cloud id" and rewrites a non-gateway path in the logs.
+    assert _is_gateway_url(url=url) is False
+    assert _effective_cloud_id(url=url, cloud_id="") == ""
+    assert _mask_server(server=url) == url
+
+
+@pytest.mark.parametrize(
+    "garbage_segment",
+    [pytest.param("../../admin", id="traversal"), pytest.param("z", id="one-character")],
+)
+def test_garbage_derived_cloud_id_leaves_error_bodies_readable(caplog, garbage_segment):
+    caplog.set_level(logging.DEBUG)
+    gateway_url = f"{SA_GATEWAY_URL_PREFIX}{garbage_segment}"
+    body = "Issue ABC-1: cannot be carried out"
+
+    # A segment that is not a cloud id is never used as a redaction pattern, so it cannot pass the missing-id guard
+    # and then shred every error body it happens to match (".." would turn "cannot" into a placeholder).
+    assert _effective_cloud_id(url=gateway_url, cloud_id="") == ""
+    assert _error_detail(text=body, cloud_id=_effective_cloud_id(url=gateway_url, cloud_id="")) == body
+
+    with pytest.raises(SystemExit):
+        _report_jira_auth_error(
+            exp=JIRAError(status_code=401, text=body),
+            jira_config_dict={"url": gateway_url, "cloud": False, "cloud_id": "", "token": REPORT_TOKEN},
+        )
+    detail_messages = [record.getMessage() for record in caplog.records if ": 401 " in record.getMessage()]
+    assert len(detail_messages) == 1
+    assert detail_messages[0].endswith(body)
+
+
+TRANSPORT_CLOUD_ID = "ffffffff-1111-2222-3333-444444444444"
+RESOLVER_CLOUD_ID = "dddddddd-9999-aaaa-bbbb-cccccccccccc"
+
+
+def test_transport_retry_log_masks_the_cloud_id_at_its_original_level(mocker, caplog):
+    caplog.set_level(logging.DEBUG)
+    # The filter is installed at the CLI boundary, before the client makes its first request.
+    _run_jira_command(mocker, "--cloud-id", TRANSPORT_CLOUD_ID, "--token", "t", "--check-auth")
+
+    # The jira library logs the full request url (which encodes the cloud id) on a retry, below this module.
+    logging.getLogger("jira.resilientsession").warning(
+        "GET https://api.atlassian.com/ex/jira/%s/rest/api/2/issue/ABC-1", TRANSPORT_CLOUD_ID
+    )
+
+    records = [record for record in caplog.records if record.name == "jira.resilientsession"]
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert TRANSPORT_CLOUD_ID not in message
+    assert f"ex/jira/{MASKED_CLOUD_ID}/rest" in message
+    # The mask must not cost the record its level or its delivery to the handler.
+    assert records[0].levelno == logging.WARNING
+    assert records[0].levelname == "WARNING"
+    assert TRANSPORT_CLOUD_ID not in caplog.text
+
+
+FILTER_CLOUD_ID = "eeeeeeee-5555-6666-7777-888888888888"
+
+
+def test_transport_log_filter_masks_bytes_and_non_str_payloads(caplog):
+    caplog.set_level(logging.DEBUG)
+    _install_log_secret_filter(cloud_id=FILTER_CLOUD_ID)
+    transport = logging.getLogger("jira.resilientsession")
+
+    # python-jira logs the raw response body as bytes (response.content), so the mask keeps the payload's type and
+    # encodes the same <cloud-id> placeholder a str payload gets.
+    transport.debug("response.body:\n%s", f'{{"cloudId": "{FILTER_CLOUD_ID}"}}'.encode())
+    # Any other arg (an exception, a dict) only leaks through its string form.
+    transport.warning("GET %s failed: %s", GATEWAY_URL, RuntimeError(f"boom for {FILTER_CLOUD_ID}"))
+    transport.info("payload %s", {"cloudId": FILTER_CLOUD_ID})
+    # A record that never mentions the cloud id is passed through untouched, level included.
+    transport.warning("retrying in 1s")
+
+    records = [record for record in caplog.records if record.name == "jira.resilientsession"]
+    assert len(records) == 4
+    assert all(FILTER_CLOUD_ID not in record.getMessage() for record in records)
+    assert isinstance(records[0].args[0], bytes)
+    assert records[0].args[0] == b'{"cloudId": "<cloud-id>"}'
+    assert MASKED_CLOUD_ID in records[1].getMessage()
+    assert MASKED_CLOUD_ID in records[2].getMessage()
+    assert records[3].getMessage() == "retrying in 1s"
+    assert [record.levelno for record in records] == [logging.DEBUG, logging.WARNING, logging.INFO, logging.WARNING]
+
+
+def test_transport_log_filter_masks_userinfo_in_a_bytes_payload(caplog):
+    caplog.set_level(logging.DEBUG)
+    _install_log_secret_filter(cloud_id=FILTER_CLOUD_ID)
+    transport = logging.getLogger("jira.resilientsession")
+    body = f'{{"url": "https://user:{USERINFO_PASSWORD}@api.atlassian.com/ex/jira/{FILTER_CLOUD_ID}"}}'
+
+    transport.debug("response.body:\n%s", body.encode())
+    # A non-UTF-8 body must survive the decode/encode pair byte for byte, userinfo masking included.
+    transport.debug("response.body:\n%s", b"boom \xff\xfe for https://user:p@ss@site.atlassian.net")
+
+    records = [record for record in caplog.records if record.name == "jira.resilientsession"]
+    assert len(records) == 2
+    assert all(isinstance(record.args[0], bytes) for record in records)
+    assert records[0].args[0] == f'{{"url": "{SA_GATEWAY_URL_PREFIX}{MASKED_CLOUD_ID}"}}'.encode()
+    assert records[1].args[0] == b"boom \xff\xfe for https://site.atlassian.net"
+    assert [record.levelno for record in records] == [logging.DEBUG, logging.DEBUG]
+    assert USERINFO_PASSWORD not in caplog.text
+    assert FILTER_CLOUD_ID not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "args,expected_url",
+    [
+        # No --cloud-id: the id exists only inside the userinfo-bearing gateway url.
+        pytest.param(
+            ("--url", USERINFO_GATEWAY_URL, "--token", "t", "--cloud-id", ""),
+            f"{SA_GATEWAY_URL_PREFIX}{MASKED_CLOUD_ID}",
+            id="gateway-userinfo-only",
+        ),
+        # --cloud-id plus the same url: the id is masked from both sources.
+        pytest.param(
+            ("--url", USERINFO_GATEWAY_URL, "--token", "t", "--cloud-id", CLOUD_ID),
+            f"{SA_GATEWAY_URL_PREFIX}{MASKED_CLOUD_ID}",
+            id="gateway-userinfo-with-cloud-id",
+        ),
+        # A Data Center url resolves no cloud id at all, yet its userinfo still needs the filter.
+        pytest.param(
+            ("--url", USERINFO_DATACENTER_URL, "--token", "t", "--cloud-id", ""),
+            "https://issues.redhat.com",
+            id="datacenter-userinfo",
+        ),
+    ],
+)
+def test_transport_log_filter_masks_the_userinfo_and_the_cloud_id(mocker, caplog, args, expected_url):
+    caplog.set_level(logging.DEBUG)
+    # The filter is installed at the CLI boundary, before the client makes its first request.
+    _run_jira_command(mocker, *args, "--check-auth")
+
+    # The jira library quotes the request url verbatim, credential and cloud id included.
+    logging.getLogger("jira.resilientsession").warning("GET %s/rest/api/2/issue/ABC-1", args[1])
+
+    records = [record for record in caplog.records if record.name == "jira.resilientsession"]
+    assert len(records) == 1
+    assert records[0].getMessage() == f"GET {expected_url}/rest/api/2/issue/ABC-1"
+    assert USERINFO_PASSWORD not in caplog.text
+    assert CLOUD_ID not in caplog.text
+    # Masked, not dropped: the record keeps its level and its delivery to the handler.
+    assert records[0].levelno == logging.WARNING
+    assert records[0].levelname == "WARNING"
+
+
+def test_transport_log_filter_masks_the_bearer_token_in_the_message_and_the_traceback(mocker, caplog):
+    caplog.set_level(logging.DEBUG)
+    token = "s3cr3t-token-value"
+    # A PAT-mode run has no cloud id and no userinfo url, so the token alone has to install the filter.
+    _run_jira_command(mocker, "--url", "https://issues.redhat.com", "--token", token, "--cloud-id", "", "--check-auth")
+
+    transport = logging.getLogger("urllib3.connectionpool")
+    transport.warning("GET /rest/api/2/issue failed for %s", token)
+    try:
+        raise RuntimeError(f"connection to /rest/api/2/issue failed for {token}")
+    except RuntimeError:
+        transport.exception("request failed")
+
+    records = [record for record in caplog.records if record.name == "urllib3.connectionpool"]
+    assert len(records) == 2
+    assert token not in records[0].getMessage()
+    assert "***" in records[0].getMessage()
+    # The traceback is rendered into the record, so an exception message cannot walk past the filter either.
+    assert records[1].exc_text is not None
+    assert token not in records[1].exc_text
+    assert token not in caplog.text
+
+
+def test_log_secret_filter_is_installed_by_the_cli_not_the_resolver(mocker, caplog):
+    caplog.set_level(logging.DEBUG)
+    mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+    factory_before = logging.getLogRecordFactory()
+
+    process_jira_command_line_config_file(
+        config_file_path="/path",
+        url="",
+        token="t",
+        issue_pattern="*",
+        resolved_statuses=[],
+        version_string_not_targeted_jiras="",
+        target_versions=[],
+        skip_projects=[],
+        user="",
+        cloud=None,
+        cloud_id=RESOLVER_CLOUD_ID,
+    )
+
+    # Resolving the config is side-effect free: it must not rewrite process-wide logging.
+    assert logging.getLogRecordFactory() is factory_before
+
+    _run_jira_command(mocker, "--cloud-id", RESOLVER_CLOUD_ID, "--token", "t", "--check-auth")
+
+    assert logging.getLogRecordFactory() is not factory_before
+    resolver_gateway_url = SA_GATEWAY_URL_TEMPLATE.format(cloud_id=RESOLVER_CLOUD_ID)
+    logging.getLogger("jira.resilientsession").warning("GET %s/rest/api/3/project", resolver_gateway_url)
+    messages = [record.getMessage() for record in caplog.records if record.name == "jira.resilientsession"]
+    assert len(messages) == 1
+    assert RESOLVER_CLOUD_ID not in messages[0]
+    assert MASKED_CLOUD_ID in messages[0]
 
 
 def test_check_jira_auth_failure_exits(mocker, caplog):
@@ -1670,6 +2390,363 @@ def test_check_jira_auth_non_auth_error_reports_cause(mocker, caplog):
 SA_ENV_TOKEN = "atst-env-only-token"
 
 
+@pytest.mark.parametrize(
+    "projects_return,anonymous_status,expected_exit,expected_reason",
+    [
+        pytest.param([], 401, 1, "no projects are visible", id="empty-list-unverified"),
+        pytest.param([{"key": "ABC"}], 401, 0, "", id="non-empty-list-verified"),
+        pytest.param([{"key": "ABC"}], 403, 0, "", id="non-empty-list-anonymous-rejected"),
+        pytest.param([{"key": "ABC"}], 200, 1, "without an Authorization header", id="non-empty-list-anonymous"),
+    ],
+)
+def test_check_jira_auth_project_list_decides_the_verdict(
+    mocker, projects_return, anonymous_status, expected_exit, expected_reason
+):
+    mock_logger = _patch_logger(mocker)
+    result, mock_jira_cls, _ = _run_oauth_command(
+        mocker,
+        *SCOPED_TOKEN_ARGS,
+        "--check-auth",
+        myself_error=JIRAError(status_code=401, text="Unauthorized"),
+        projects_return=projects_return,
+        # The same non-empty list without a bearer is what decides whether the authenticated one proved anything.
+        anonymous_status=anonymous_status,
+        anonymous_projects=[{"key": "ABC"}],
+    )
+
+    assert result.exit_code == expected_exit, _logged(mock_logger, "error")
+    mock_jira_cls.return_value.projects.assert_called_once()
+    errors = _logged(mock_logger, "error")
+    # Neither a rejection hint nor an "authentication failed" line: the endpoint decided, not the /myself 401.
+    assert _hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT) == []
+    assert [message for message in errors if "Jira authentication failed" in message] == []
+    infos = _logged(mock_logger, "info")
+    unverified = [message for message in errors if "could not be verified" in message]
+    if expected_exit == 0:
+        assert [message for message in infos if "project visibility verified" in message]
+        assert unverified == []
+    else:
+        # Neither an empty list nor a list that is also readable anonymously proves anything about the bearer.
+        assert len(unverified) == 1
+        assert expected_reason in unverified[0]
+        assert not [message for message in infos if "Jira authentication OK" in message]
+
+
+@pytest.mark.parametrize(
+    "rest_api_version,expected_version",
+    [
+        pytest.param(None, "2", id="client-default-rest-api-version"),
+        pytest.param("3", "3", id="client-rest-api-version-3"),
+    ],
+)
+def test_check_jira_auth_anonymous_probe_uses_the_client_rest_api_version(mocker, rest_api_version, expected_version):
+    _patch_logger(mocker)
+    mock_session = _mock_anonymous_probe(mocker, status_code=200, projects=[{"key": "ABC"}])
+    mock_jira_cls = mocker.patch("apps.jira_utils.jira_information.JIRA")
+    mock_jira_cls.return_value._options = {"rest_api_version": rest_api_version} if rest_api_version else {}
+    mock_jira_cls.return_value.myself.side_effect = JIRAError(status_code=401, text="Unauthorized")
+    mock_jira_cls.return_value.projects.return_value = [{"key": "ABC"}]
+    mock_mint = mocker.patch("apps.jira_utils.jira_information.mint_atlassian_token", return_value="minted-token")
+
+    result = CliRunner().invoke(
+        get_jira_mismatch,
+        [*SCOPED_TOKEN_ARGS, "--client-id", OAUTH_CLIENT_ID, "--client-secret", OAUTH_CLIENT_SECRET, "--check-auth"],
+    )
+
+    assert result.exit_code == 1
+    mock_mint.assert_called_once()
+    mock_jira_cls.return_value.projects.assert_called_once()
+    # The header-less probe must hit the same endpoint the authenticated list went to, or it answers about a
+    # different one (a v3 that is not served would report "not anonymous" and invert the guard).
+    mock_session.prepare_request.assert_called_once()
+    assert mock_session.prepare_request.call_args.args[0].url == f"{GATEWAY_URL}/rest/api/{expected_version}/project"
+    # No credential may travel with the probe: requests adds one from the userinfo or the netrc file otherwise.
+    assert "Authorization" not in mock_session.send.call_args.kwargs["request"].headers
+    # The environment (CA bundle, proxy) is still merged into the send, or the probe would silently be a no-op there.
+    merge_args = mock_session.merge_environment_settings.call_args.args
+    assert merge_args[0] == f"{GATEWAY_URL}/rest/api/{expected_version}/project"
+    # The remaining positionals are (proxies, stream, verify, cert): a `None` proxies argument would make
+    # merge_setting() skip resolve_proxies() and silently drop the env proxy and CA bundle altogether.
+    assert merge_args[1:] == ({}, None, None, None)
+
+
+def test_check_jira_auth_is_inconclusive_when_a_dead_bearer_sees_an_anonymous_project_list(mocker):
+    mock_logger = _patch_logger(mocker)
+    result, mock_jira_cls, _ = _run_oauth_command(
+        mocker,
+        *SCOPED_TOKEN_ARGS,
+        "--check-auth",
+        # An expired scoped token: /myself rejects it, and the project endpoint answers as it would with no bearer.
+        myself_error=JIRAError(status_code=401, text="Unauthorized"),
+        projects_return=[{"key": "ABC"}],
+        anonymous_status=200,
+        anonymous_projects=[{"key": "ABC"}],
+    )
+
+    assert result.exit_code == 1
+    assert mock_jira_cls.return_value.projects.call_count == 1
+    errors = _logged(mock_logger, "error")
+    unverified = [message for message in errors if "could not be verified" in message]
+    assert len(unverified) == 1
+    assert "without an Authorization header" in unverified[0]
+    # A dead bearer must never be reported as a healthy one.
+    assert not [message for message in _logged(mock_logger, "info") if "authentication OK" in message]
+    assert _hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT) == []
+
+
+def test_check_jira_auth_projects_outage_reports_the_project_error(mocker):
+    mock_logger = _patch_logger(mocker)
+    result, _, _ = _run_oauth_command(
+        mocker,
+        *SCOPED_TOKEN_ARGS,
+        "--check-auth",
+        myself_error=JIRAError(status_code=401, text="Unauthorized"),
+        projects_error=JIRAError(status_code=503, text="Service Unavailable"),
+    )
+
+    assert result.exit_code == 1
+    errors = _logged(mock_logger, "error")
+    # An outage is not a rejection: the project endpoint's status code is what the user needs, not token advice.
+    assert [message for message in errors if "Jira authentication failed" in message] == []
+    assert _hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT) == []
+    check_failed = [message for message in errors if "Jira credential check failed" in message]
+    assert len(check_failed) == 1
+    assert "status: 503" in check_failed[0]
+    assert "Service Unavailable" in check_failed[0]
+    assert [message for message in errors if "could not be verified" in message] == []
+
+
+@pytest.mark.parametrize(
+    "myself_status,projects_status",
+    [
+        pytest.param(401, 401, id="both-401"),
+        pytest.param(403, 403, id="both-403"),
+        pytest.param(401, 403, id="myself-401-projects-403"),
+        pytest.param(403, 401, id="myself-403-projects-401"),
+    ],
+)
+def test_check_jira_auth_rejects_when_both_probe_endpoints_reject(mocker, myself_status, projects_status):
+    mock_logger = _patch_logger(mocker)
+    result, _, _ = _run_oauth_command(
+        mocker,
+        *SCOPED_TOKEN_ARGS,
+        "--check-auth",
+        myself_error=JIRAError(status_code=myself_status, text="Unauthorized"),
+        projects_error=JIRAError(status_code=projects_status, text="Forbidden"),
+    )
+
+    assert result.exit_code == 1
+    errors = _logged(mock_logger, "error")
+    auth_messages = [message for message in errors if "Jira authentication failed" in message]
+    assert len(auth_messages) == 1
+    # The original /myself error is reported, not the projects() one.
+    assert f"): {myself_status} " in auth_messages[0]
+    assert len(_hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT)) == 1
+    assert [message for message in errors if "could not be verified" in message] == []
+
+
+ANONYMOUS_PROBE_URL = f"{GATEWAY_URL}/rest/api/2/project"
+
+
+def _probe_response(mocker, ok=True, payload=None, raise_error=None):
+    """Mock `requests.Session.send` only, so the probe's own preparation still runs for real."""
+    if raise_error is not None:
+        return mocker.patch("requests.Session.send", side_effect=raise_error)
+
+    response = mocker.MagicMock()
+    response.ok = ok
+    response.status_code = 200 if ok else 500
+    response.json.return_value = payload
+    response.json.side_effect = None if payload is not None else ValueError("no json")
+    return mocker.patch("requests.Session.send", return_value=response)
+
+
+@pytest.mark.parametrize(
+    "server,send_kwargs,expected",
+    [
+        # No server resolved means no probe at all.
+        pytest.param("", {}, False, id="no-server"),
+        pytest.param(GATEWAY_URL, {"raise_error": requests.ConnectionError("boom")}, False, id="unreachable"),
+        pytest.param(GATEWAY_URL, {"ok": False, "payload": [{"key": "ABC"}]}, False, id="non-ok-status"),
+        pytest.param(GATEWAY_URL, {"payload": None}, False, id="non-json-body"),
+        pytest.param(GATEWAY_URL, {"payload": {"key": "ABC"}}, False, id="json-object"),
+        pytest.param(GATEWAY_URL, {"payload": []}, False, id="empty-list"),
+        pytest.param(GATEWAY_URL, {"payload": [{"key": "ABC"}]}, True, id="non-empty-list"),
+    ],
+)
+def test_project_endpoint_is_anonymous(mocker, server, send_kwargs, expected):
+    mock_send = _probe_response(mocker, **send_kwargs)
+
+    assert _project_endpoint_is_anonymous(server=server) is expected
+    # Every branch but the empty-server one is decided by this one request, so it must have been made.
+    assert mock_send.called is bool(server)
+
+
+@pytest.mark.parametrize(
+    "server",
+    [
+        # A userinfo url makes requests send `Authorization: Basic ...` whatever the headers say.
+        pytest.param(f"https://user:{USERINFO_PASSWORD}@api.atlassian.com/ex/jira/{CLOUD_ID}", id="userinfo-url"),
+        # A ~/.netrc entry for the host is picked up by Session.prepare_request, headers={} or not.
+        pytest.param(f"https://{SA_GATEWAY_HOST}/ex/jira/{CLOUD_ID}", id="netrc-entry"),
+    ],
+)
+def test_project_endpoint_is_anonymous_sends_no_authorization_header(mocker, monkeypatch, tmp_path, server):
+    netrc_file = tmp_path / "netrc"
+    netrc_file.write_text(f"machine {SA_GATEWAY_HOST}\n  login netrc-user\n  password netrc-password\n")
+    netrc_file.chmod(0o600)
+    monkeypatch.setenv("NETRC", str(netrc_file))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    mock_send = _probe_response(mocker, payload=[{"key": "ABC"}])
+
+    assert _project_endpoint_is_anonymous(server=server) is True
+
+    # The control: requests really does turn that netrc entry into a credential, so the probe's own session is what
+    # keeps it out.
+    control = requests.Session().prepare_request(requests.Request(method="GET", url=ANONYMOUS_PROBE_URL))
+    assert "Authorization" in control.headers
+    sent = mock_send.call_args.kwargs["request"]
+    assert "Authorization" not in sent.headers
+    # The userinfo is stripped from the url the probe sends, not just from the header.
+    assert sent.url == ANONYMOUS_PROBE_URL
+    assert USERINFO_PASSWORD not in sent.url
+
+
+class _RedirectingAdapter(requests.adapters.HTTPAdapter):
+    """Answer every request with a 302 and record what reached it, so a followed redirect is visible."""
+
+    def __init__(self):
+        super().__init__()
+        self.sent = []
+
+    def send(self, request, **kwargs):
+        self.sent.append(request)
+        response = requests.Response()
+        response.status_code = 302
+        response.url = request.url
+        response.request = request
+        response.headers["Location"] = f"https://redirect.target.example/ex/jira/{CLOUD_ID}/rest/api/2/project"
+        return response
+
+
+def test_project_endpoint_is_anonymous_does_not_follow_a_redirect(mocker, monkeypatch, tmp_path):
+    netrc_file = tmp_path / "netrc"
+    netrc_file.write_text(f"machine {SA_GATEWAY_HOST}\n  login netrc-user\n  password netrc-password\n")
+    netrc_file.chmod(0o600)
+    monkeypatch.setenv("NETRC", str(netrc_file))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    # The real Session (and its prepare_request) runs, mounted on an adapter that answers 302 instead of the network.
+    adapter = _RedirectingAdapter()
+    session = requests.Session()
+    session.mount("https://", adapter)
+    mocker.patch("apps.jira_utils.jira_information.requests.Session", return_value=session)
+
+    assert _project_endpoint_is_anonymous(server=GATEWAY_URL) is False
+
+    # The control: requests really does turn that netrc entry into a credential on a plain prepared request.
+    control = requests.Session().prepare_request(requests.Request(method="GET", url=ANONYMOUS_PROBE_URL))
+    assert "Authorization" in control.headers
+    # A 3xx is not a header-less 2xx answer, so the verdict is already False. Following it would run rebuild_auth(),
+    # which re-injects the netrc credential - of this host or of the redirect target's - on the next hop.
+    assert len(adapter.sent) == 1
+    assert "Authorization" not in adapter.sent[0].headers
+
+
+def test_scan_continues_when_the_projects_probe_is_inconclusive(mocker):
+    mock_logger = _patch_logger(mocker)
+    result, mock_jira_cls, mock_get_jira_information = _run_scan(
+        mocker,
+        SCOPED_TOKEN_ARGS,
+        issues=["ABC-1", "ABC-2"],
+        per_issue_status=401,
+        myself_side_effect=JIRAError(status_code=401, text="Unauthorized"),
+        projects_side_effect=JIRAError(status_code=503, text="Service Unavailable"),
+    )
+
+    assert result.exit_code == 1
+    # Inconclusive is not verification, but it is not a rejection either, so the scan is not aborted.
+    assert mock_get_jira_information.call_count == 2
+    # The first 401 clears the cached verdict of the first issue, so the second one reuses the fresh probe instead of
+    # paying for another: at most one probe pair per scan.
+    assert mock_jira_cls.return_value.myself.call_count == 1
+    assert mock_jira_cls.return_value.projects.call_count == 1
+    errors = _logged(mock_logger, "error")
+    assert _hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT) == []
+    assert [message for message in errors if "Following Jira ids failed" in message]
+
+
+def test_scan_probes_a_repeated_401_once(mocker):
+    mock_logger = _patch_logger(mocker)
+    result, mock_jira_cls, mock_get_jira_information = _run_scan(
+        mocker,
+        SCOPED_TOKEN_ARGS,
+        issues=["ABC-1", "ABC-2", "ABC-3"],
+        per_issue_status=401,
+        # A scoped credential: /myself is out of its scopes, and an empty project list proves nothing but rejects
+        # nothing either, so the scan keeps going.
+        myself_side_effect=JIRAError(status_code=401, text="Unauthorized"),
+        projects_return=[],
+    )
+
+    assert result.exit_code == 1
+    assert mock_get_jira_information.call_count == 3
+    # A 401 clears the cached verdict at most once per scan: the second and third issue reuse the refreshed probe
+    # instead of paying for another pair each.
+    assert mock_jira_cls.return_value.myself.call_count == 1
+    assert mock_jira_cls.return_value.projects.call_count == 1
+    errors = _logged(mock_logger, "error")
+    assert _hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT) == []
+    assert len([message for message in errors if "Following Jira ids failed" in message]) == 1
+
+
+def test_scan_reprobes_once_when_a_401_follows_a_harmless_403(mocker):
+    mock_logger = _patch_logger(mocker)
+    result, mock_jira_cls, mock_get_jira_information = _run_scan(
+        mocker,
+        SCOPED_TOKEN_ARGS,
+        issues=["ABC-1", "ABC-2"],
+        # A per-issue 403 is a project permission gap: /myself still answers, so the credential is healthy and the
+        # verdict is cached as a harmless one. The second issue's 401 (a bearer that expired mid-scan) must clear
+        # that stale verdict exactly once.
+        per_issue_results=[("file.py", "error 403", 403), ("file.py", "error 401", 401)],
+    )
+
+    assert result.exit_code == 1
+    assert mock_get_jira_information.call_count == 2
+    # One probe for the 403, one re-probe for the 401: neither the stale verdict nor a probe per issue.
+    assert mock_jira_cls.return_value.myself.call_count == 2
+    errors = _logged(mock_logger, "error")
+    assert _hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT) == []
+    assert len([message for message in errors if "Following Jira ids failed" in message]) == 1
+
+
+def test_scan_aborts_when_the_401_after_a_403_rejects_the_credential(mocker):
+    mock_logger = _patch_logger(mocker)
+    result, mock_jira_cls, mock_get_jira_information = _run_scan(
+        mocker,
+        SCOPED_TOKEN_ARGS,
+        issues=["ABC-1", "ABC-2"],
+        # The 403 alone looks like a project permission gap: the first probe is harmless. The 401 after it is what a
+        # dead bearer looks like, and the re-probe rejects the credential on both endpoints, so the scan must abort
+        # instead of reporting every remaining issue as a permission gap. The first probe keeps the suite green if the
+        # abort block is deleted, which only the second probe can catch.
+        per_issue_results=[("file.py", "error 403", 403), ("file.py", "error 401", 401)],
+        myself_side_effect=[{"accountId": "account-id"}, JIRAError(status_code=401, text="Unauthorized")],
+        projects_side_effect=JIRAError(status_code=401, text="Unauthorized"),
+    )
+
+    assert result.exit_code == 1
+    # Every remaining issue would fail identically, so the scan stops at the second one.
+    assert mock_get_jira_information.call_count == 2
+    # One probe for the 403, one re-probe for the 401.
+    assert mock_jira_cls.return_value.myself.call_count == 2
+    assert mock_jira_cls.return_value.projects.call_count == 1
+    errors = _logged(mock_logger, "error")
+    assert len(_hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT)) == 1
+    # The abort replaces the per-issue aggregate: the failures are one dead credential, not N permission gaps.
+    assert [message for message in errors if "Following Jira ids failed" in message] == []
+
+
 def _run_env_only(mocker, monkeypatch, *args):
     """Emulate a process started with JIRA_CLOUD_ID/JIRA_TOKEN only (no url, user or config file)."""
     monkeypatch.setenv("JIRA_CLOUD_ID", CLOUD_ID)
@@ -1702,6 +2779,27 @@ def test_get_jira_mismatch_env_only_service_account_builds_gateway_client(mocker
     mock_jira_cls.return_value.myself.assert_called_once()
     # --check-auth only verifies the credential, it must not scan the repo.
     mock_get_jiras.assert_not_called()
+
+
+def test_get_jira_mismatch_env_only_oauth_pair_reaches_the_cloud_id_message(mocker, monkeypatch):
+    mock_logger = _patch_logger(mocker)
+    # The pair has no os.getenv() option default, so it is resolved inside the config resolver: the pre-flight guard
+    # must still see it, or it reports an empty invocation and the documented message becomes unreachable.
+    monkeypatch.setenv("JIRA_SA_CLIENT_ID", OAUTH_CLIENT_ID)
+    monkeypatch.setenv("JIRA_SA_CLIENT_SECRET", OAUTH_CLIENT_SECRET)
+    mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+    mock_mint = mocker.patch("apps.jira_utils.jira_information.mint_atlassian_token")
+    mock_jira_cls = mocker.patch("apps.jira_utils.jira_information.JIRA")
+
+    result = CliRunner().invoke(get_jira_mismatch, ["--check-auth"])
+
+    assert result.exit_code == 1
+    errors = "\n".join(_logged(mock_logger, "error"))
+    assert "No Jira configuration supplied" not in errors
+    assert "A Jira cloud id is required for OAuth service-account authentication" in errors
+    # Nothing can be attempted without a cloud id, so no token is minted and no client is built.
+    mock_mint.assert_not_called()
+    mock_jira_cls.assert_not_called()
 
 
 def test_get_jira_mismatch_env_cloud_id_opt_out_requires_url(mocker, monkeypatch):
@@ -2161,6 +3259,115 @@ def test_get_jira_mismatch_gateway_url_scans_without_url_prefix(mocker):
     mock_get_jiras.assert_called_once_with(issue_pattern="([A-Z]+-[0-9]+)", jira_url="")
 
 
+@pytest.mark.parametrize(
+    "args,expected_jira_url",
+    [
+        # The bare gateway root (no trailing slash) is still a gateway url: using it as the prefix matches no link,
+        # because a source-code link never points at the API gateway.
+        pytest.param(
+            ("--cloud-id", CLOUD_ID, "--url", SA_GATEWAY_URL_PREFIX.rstrip("/"), "--token", "t"),
+            "",
+            id="bare-gateway-root",
+        ),
+        # A site url is exactly what a source-code link holds, so it is the prefix, unchanged.
+        pytest.param(DATACENTER_ARGS, "https://issues.redhat.com", id="site-url-unchanged"),
+    ],
+)
+def test_scan_matches_browse_links_against_the_resolved_url(mocker, args, expected_jira_url):
+    mock_logger = _patch_logger(mocker)
+
+    result, _, mock_get_jiras = _run_jira_command(mocker, *args)
+
+    assert result.exit_code == 0
+    mock_get_jiras.assert_called_once_with(issue_pattern="([A-Z]+-[0-9]+)", jira_url=expected_jira_url)
+    # Neither run supplied a url to discard, the gateway root included: a gateway url is not a site url.
+    assert not [message for message in _logged(mock_logger, "info") if "discarding" in message]
+
+
+@pytest.mark.parametrize(
+    "url,expected_exit,expected_server",
+    [
+        pytest.param(SA_GATEWAY_URL_PREFIX, 1, None, id="no-cloud-id-segment"),
+        pytest.param(f"{SA_GATEWAY_URL_PREFIX}/", 1, None, id="empty-cloud-id-segment"),
+        # The bare url without its trailing slash is the likeliest typo, so it must fail here rather than be taken
+        # for a Data Center url and silently switch the run to PAT mode against the gateway root.
+        pytest.param(SA_GATEWAY_URL_PREFIX.rstrip("/"), 1, None, id="bare-gateway-url-no-trailing-slash"),
+        # The bare gateway host carries no id either, with or without its trailing slash.
+        pytest.param(f"https://{SA_GATEWAY_HOST}", 1, None, id="bare-gateway-host"),
+        pytest.param(f"https://{SA_GATEWAY_HOST}/", 1, None, id="bare-gateway-host-trailing-slash"),
+        pytest.param(GATEWAY_URL, 0, GATEWAY_URL, id="valid-gateway-url"),
+        # A deeper path below the cloud id is dropped rather than taken for the server: python-jira appends its own
+        # `/rest/api/2/issue/<KEY>`, so keeping it would fetch every issue from the doubled path.
+        pytest.param(f"{GATEWAY_URL}/rest/api/2", 0, GATEWAY_URL, id="valid-gateway-url-deeper-path"),
+    ],
+)
+def test_get_jira_mismatch_gateway_url_without_a_cloud_id_segment(mocker, url, expected_exit, expected_server):
+    mock_logger = _patch_logger(mocker)
+    mock_mint = mocker.patch("apps.jira_utils.jira_information.mint_atlassian_token")
+
+    result, mock_jira_cls, mock_get_jiras = _run_jira_command(mocker, "--url", url, "--token", "t", "--cloud-id", "")
+
+    assert result.exit_code == expected_exit
+    if not expected_exit:
+        # A gateway url already encodes the cloud id, so no --cloud-id is needed and the scan proceeds against the
+        # canonical server: it carries no path of its own, so the issue request is
+        # `/ex/jira/<id>/rest/api/2/issue/<KEY>`.
+        mock_jira_cls.assert_called_once_with(server=expected_server, token_auth="t")
+        assert expected_server == GATEWAY_URL
+        mock_get_jiras.assert_called_once()
+        return
+
+    message = "\n".join(_logged(mock_logger, "error"))
+    assert "missing its cloud id" in message
+    # The message names the expected shape, so the fix is obvious without reading the source.
+    assert f"expected {SA_GATEWAY_URL_PREFIX}<cloud-id>" in message
+    # Failing here rather than at the gateway root means no client is built and no request is made.
+    mock_jira_cls.assert_not_called()
+    mock_get_jiras.assert_not_called()
+    mock_mint.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        pytest.param(f"{SA_GATEWAY_URL_PREFIX}abc123", id="id-segment-too-short"),
+        # An Atlassian account id (digits:uuid) is a user identity, not the cloud id of the site.
+        pytest.param(f"{SA_GATEWAY_URL_PREFIX}712020:f0a60b32-1234", id="account-id-segment"),
+    ],
+)
+def test_get_jira_mismatch_gateway_url_with_an_invalid_id_segment(mocker, url):
+    mock_logger = _patch_logger(mocker)
+    result, mock_jira_cls, mock_get_jiras = _run_jira_command(mocker, "--url", url, "--token", "t", "--cloud-id", "")
+
+    assert result.exit_code == 1
+    message = "\n".join(_logged(mock_logger, "error"))
+    # An id that is present but the wrong shape is not "missing": telling the user to append it sends them looking
+    # for the wrong thing.
+    assert "Invalid Jira cloud id in the supplied gateway url" in message
+    assert "missing its cloud id" not in message
+    mock_jira_cls.assert_not_called()
+    mock_get_jiras.assert_not_called()
+
+
+def test_get_jira_mismatch_malformed_url_reports_one_line(mocker):
+    mock_logger = _patch_logger(mocker)
+    mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+    mock_get_jiras = mocker.patch("apps.jira_utils.jira_information.get_jiras_from_python_files", return_value={})
+
+    # An unbracketed IPv6 host makes urlsplit raise. The url is validated once before the client is built, so the
+    # documented single-line error - not a traceback, and not an outage blamed on the server - is what comes out.
+    result = CliRunner().invoke(
+        get_jira_mismatch, ["--url", "https://[2001:db8::1/ex/jira/x", "--token", "t", "--cloud-id", ""]
+    )
+
+    assert result.exit_code == 1
+    assert _logged(mock_logger, "exception") == []
+    errors = _logged(mock_logger, "error")
+    assert len(errors) == 1
+    assert "Invalid Jira server url (unparseable" in errors[0]
+    mock_get_jiras.assert_not_called()
+
+
 def test_get_jira_mismatch_invalid_cloud_id_exits_without_client(mocker):
     mock_logger = _patch_logger(mocker)
     result, mock_jira_cls, mock_get_jiras = _run_jira_command(mocker, "--cloud-id", "not a cloud id!", "--token", "t")
@@ -2192,7 +3399,9 @@ def test_get_jira_mismatch_aborts_scan_when_credential_rejected(mocker):
     # A dead credential breaks every issue identically: stop at the first one instead of scanning the repo.
     mock_get_jira_information.assert_called_once()
     # The abort is decided by the probe, not by the per-issue status code alone; a cloud id is service-account auth.
-    mock_credential_rejected.assert_called_once_with(jira_obj=mock_jira_cls.return_value, service_account=True)
+    mock_credential_rejected.assert_called_once_with(
+        jira_obj=mock_jira_cls.return_value, service_account=True, token="t", cloud_id=CLOUD_ID
+    )
     error_messages = _logged(mock_logger, "error")
     assert len(_hint_logs(error_messages, AUTH_MODE_SERVICE_ACCOUNT)) == 1
     assert not [message for message in error_messages if "Following Jira ids failed" in message]
@@ -2220,6 +3429,117 @@ def test_get_jira_mismatch_continues_scan_when_only_issue_is_forbidden(mocker, s
     assert [message for message in error_messages if "Following Jira ids failed" in message]
 
 
+CREDENTIAL_REJECTED_PROBE_TEXT = (
+    "HTTPSConnectionPool(host='api.atlassian.com', port=443): Max retries exceeded with url: "
+    "/ex/jira/{cloud_id}/rest/api/2/myself (Caused by NewConnectionError())"
+)
+
+
+def test_credential_probe_outage_never_logs_the_cloud_id(mocker, caplog, capsys):
+    caplog.set_level(logging.DEBUG)
+    mock_jira = mocker.MagicMock()
+    # A transport error message quotes the request path, which encodes the cloud id.
+    mock_jira.myself.side_effect = requests.ConnectionError(CREDENTIAL_REJECTED_PROBE_TEXT.format(cloud_id=CLOUD_ID))
+    _credential_rejected.cache_clear()
+
+    try:
+        assert _credential_rejected(jira_obj=mock_jira, token="t", cloud_id=CLOUD_ID) is False
+    finally:
+        _credential_rejected.cache_clear()
+
+    records = [record for record in caplog.records if "Jira credential probe failed" in record.getMessage()]
+    assert len(records) == 1
+    # A degraded probe is visible, not a DEBUG detail, but the url it quotes is never echoed.
+    assert records[0].levelno == logging.WARNING
+    assert CLOUD_ID not in caplog.text
+    # The placeholder, not just the absence of the id: a truncated message would look the same and prove nothing.
+    assert MASKED_CLOUD_ID in records[0].getMessage()
+    assert CLOUD_ID not in capsys.readouterr().out
+
+
+def test_credential_probe_outage_masks_the_cloud_id_before_truncating(mocker, caplog):
+    caplog.set_level(logging.DEBUG)
+    mock_jira = mocker.MagicMock()
+    # The id starts at character 170, so its placeholder ends inside the 200-character cap while the id itself does
+    # not: a truncation running before the substitution would drop the placeholder and leave a slice of the id behind.
+    probe_text = CREDENTIAL_REJECTED_PROBE_TEXT.format(cloud_id=CLOUD_ID)
+    padding = 170 - len(probe_text.split(CLOUD_ID)[0])
+    mock_jira.myself.side_effect = requests.ConnectionError("x" * padding + probe_text)
+    _credential_rejected.cache_clear()
+
+    try:
+        assert _credential_rejected(jira_obj=mock_jira, token="t", cloud_id=CLOUD_ID) is False
+    finally:
+        _credential_rejected.cache_clear()
+
+    message = next(
+        record.getMessage() for record in caplog.records if "Jira credential probe failed" in record.getMessage()
+    )
+    assert MASKED_CLOUD_ID in message
+    assert CLOUD_ID not in message
+
+
+def test_anonymous_probe_outage_never_logs_the_cloud_id(mocker, caplog, capsys):
+    caplog.set_level(logging.DEBUG)
+    _probe_response(
+        mocker, raise_error=requests.ConnectionError(CREDENTIAL_REJECTED_PROBE_TEXT.format(cloud_id=CLOUD_ID))
+    )
+
+    assert _project_endpoint_is_anonymous(server=GATEWAY_URL, cloud_id=CLOUD_ID) is False
+
+    records = [record for record in caplog.records if "Anonymous project probe" in record.getMessage()]
+    assert len(records) == 1
+    # A guard that could not run is a degraded guard, so it is logged at WARNING rather than at DEBUG.
+    assert records[0].levelno == logging.WARNING
+    assert CLOUD_ID not in caplog.text
+    # Masked, not truncated away: only the placeholder can prove the redaction ran before the 200-character cap.
+    assert MASKED_CLOUD_ID in records[0].getMessage()
+    assert CLOUD_ID not in capsys.readouterr().out
+
+
+def test_log_secret_filter_installation_does_not_nest():
+    _install_log_secret_filter(cloud_id=FILTER_CLOUD_ID)
+    factory = logging.getLogRecordFactory()
+
+    # The CLI installs twice (the configured token, then the minted one); a second install may only widen the secrets,
+    # or masking would silently stack one factory per install.
+    _install_log_secret_filter(token="s3cr3t-token-value")
+    assert logging.getLogRecordFactory() is factory
+
+
+def test_reset_log_secret_filter_leaves_a_later_factory_in_place():
+    original_factory = logging.getLogRecordFactory()
+    _install_log_secret_filter(cloud_id=FILTER_CLOUD_ID)
+    installed_factory = logging.getLogRecordFactory()
+
+    def third_party_factory(*args, **kwargs):
+        return installed_factory(*args, **kwargs)
+
+    logging.setLogRecordFactory(third_party_factory)
+    try:
+        _reset_log_secret_filter()
+        # A factory installed after ours must survive the reset, or its records are silently left unprocessed; ours
+        # then runs secretless, because the reset cleared the secrets it masks.
+        assert logging.getLogRecordFactory() is third_party_factory
+    finally:
+        logging.setLogRecordFactory(original_factory)
+
+
+def test_project_endpoint_is_anonymous_honours_the_environment_ca_bundle(mocker, monkeypatch, tmp_path):
+    ca_bundle = tmp_path / "ca.pem"
+    ca_bundle.write_text("")
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", str(ca_bundle))
+    mock_send = _probe_response(mocker, payload=[{"key": "ABC"}])
+
+    assert _project_endpoint_is_anonymous(server=GATEWAY_URL) is True
+
+    sent = mock_send.call_args.kwargs
+    # The CA bundle the site is only reachable through must survive, or the guard is a silent no-op here...
+    assert sent["verify"] == str(ca_bundle)
+    # ...while the netrc-injected header is still dropped.
+    assert "Authorization" not in sent["request"].headers
+
+
 def test_credential_rejected_is_cached(mocker):
     getattr(_credential_rejected, "cache_clear", lambda: None)()
     mock_jira = mocker.MagicMock()
@@ -2227,6 +3547,34 @@ def test_credential_rejected_is_cached(mocker):
     assert _credential_rejected(jira_obj=mock_jira) is False
     # Once per scan: myself() is a network call and its verdict cannot change mid-run for one client.
     mock_jira.myself.assert_called_once()
+
+
+def test_credential_probe_outage_is_logged_once_per_probe(mocker, caplog, monkeypatch):
+    caplog.set_level(logging.DEBUG)
+    # simple_logger's DuplicateFilter would fold the repeated identical line into one, hiding the very duplication
+    # under test: the raw records are what count here.
+    monkeypatch.setattr("apps.jira_utils.jira_information.LOGGER.filters", [])
+    mock_jira = mocker.MagicMock()
+    mock_jira.myself.side_effect = requests.ConnectionError("Connection refused")
+    _credential_rejected.cache_clear()
+
+    def outage_lines() -> list[logging.LogRecord]:
+        return [record for record in caplog.records if "Jira credential probe failed" in record.getMessage()]
+
+    try:
+        # Called once per failing issue inside the scan loop: a cached outage verdict must not repeat the line.
+        assert _credential_rejected(jira_obj=mock_jira) is False
+        assert _credential_rejected(jira_obj=mock_jira) is False
+        assert len(outage_lines()) == 1
+        mock_jira.myself.assert_called_once()
+
+        # The caller clears the cache on a later 401, which re-arms the message for the fresh probe only.
+        _credential_rejected.cache_clear()
+        assert _credential_rejected(jira_obj=mock_jira) is False
+        assert len(outage_lines()) == 2
+        assert mock_jira.myself.call_count == 2
+    finally:
+        _credential_rejected.cache_clear()
 
 
 @pytest.mark.parametrize(
@@ -2321,6 +3669,8 @@ def test_get_jira_mismatch_check_auth_accepts_scoped_token_when_projects_succeed
     mock_jira_cls.return_value.myself.side_effect = JIRAError(status_code=401, text="Unauthorized")
     mock_jira_cls.return_value.projects.return_value = [{"key": "ABC"}]
     mock_get_jiras = mocker.patch("apps.jira_utils.jira_information.get_jiras_from_python_files", return_value={})
+    # The project-visibility verdict cross-checks the endpoint without a header, so that call is mocked too.
+    _mock_anonymous_probe(mocker)
 
     result = CliRunner().invoke(get_jira_mismatch, [*SCOPED_TOKEN_ARGS, "--check-auth"])
 
@@ -2352,12 +3702,64 @@ def test_get_jira_mismatch_scoped_token_scan_continues_when_myself_is_denied(moc
 
 
 @pytest.mark.parametrize(
+    "statuses,expected_probes",
+    [
+        pytest.param((403, 403), 1, id="repeated-403-uses-the-cached-verdict"),
+        pytest.param((403, 401), 2, id="later-401-reprobes"),
+    ],
+)
+def test_scan_reprobes_the_credential_only_after_a_401(mocker, statuses, expected_probes):
+    mock_logger = _patch_logger(mocker)
+    per_issue_results = [
+        ("file.py", f"ABC-{index} error {status_code}", status_code)
+        for index, status_code in enumerate(statuses, start=1)
+    ]
+
+    result, mock_jira_cls, mock_get_jira_information = _run_scan(
+        mocker,
+        SCOPED_TOKEN_ARGS,
+        issues=["ABC-1", "ABC-2"],
+        per_issue_results=per_issue_results,
+    )
+
+    assert result.exit_code == 1
+    # Neither issue aborts the scan: the probe answers, so the failures aggregate.
+    assert mock_get_jira_information.call_count == 2
+    # myself() is the probe's network call: a 401 can be a bearer that expired after an earlier 403 was judged
+    # harmless, so that verdict must not be reused, while a repeated 403 may.
+    assert mock_jira_cls.return_value.myself.call_count == expected_probes
+    assert [message for message in _logged(mock_logger, "error") if "Following Jira ids failed" in message]
+
+
+def test_two_failing_issues_in_one_file_both_reach_the_aggregate(mocker):
+    mock_logger = _patch_logger(mocker)
+    result, _, mock_get_jira_information = _run_scan(
+        mocker,
+        SCOPED_TOKEN_ARGS,
+        issues=["ABC-1", "ABC-2"],
+        per_issue_results=[
+            ("file.py", "ABC-1 current status: closed is resolved.", None),
+            ("file.py", "ABC-2 current status: closed is resolved.", None),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert mock_get_jira_information.call_count == 2
+    aggregate = [message for message in _logged(mock_logger, "error") if "Following Jira ids failed" in message]
+    assert len(aggregate) == 1
+    # One file can hold many failures; the report must not keep only the last one.
+    assert "ABC-1 current status: closed is resolved." in aggregate[0]
+    assert "ABC-2 current status: closed is resolved." in aggregate[0]
+
+
+@pytest.mark.parametrize(
     "exp,expected",
     [
         pytest.param(JIRAError(status_code=400), False, id="400_not_retryable"),
         pytest.param(JIRAError(status_code=401), False, id="401_not_retryable"),
         pytest.param(JIRAError(status_code=403), False, id="403_not_retryable"),
         pytest.param(JIRAError(status_code=404), False, id="404_not_retryable"),
+        pytest.param(JIRAError(status_code=429), False, id="429_not_retryable_python_jira_retries_it"),
         pytest.param(JIRAError(status_code=500), True, id="500_retryable"),
         pytest.param(JIRAError(status_code=503), True, id="503_retryable"),
         pytest.param(JIRAError(status_code=None), True, id="none_status_retryable"),
@@ -2392,6 +3794,30 @@ def test_get_issue_retries_server_error(mocker):
     assert mock_jira.issue.call_count == 3
 
 
+def test_get_jira_mismatch_scan_survives_a_connection_error(mocker):
+    mock_logger = _patch_logger(mocker)
+    mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+    mock_jira_cls = mocker.patch("apps.jira_utils.jira_information.JIRA")
+    # A transport error is not a JIRAError, so tenacity does not retry it: it surfaces raw out of get_issue for the
+    # issue that hit it.
+    mock_jira_cls.return_value.issue.side_effect = requests.ConnectionError("Connection refused")
+    mocker.patch(
+        "apps.jira_utils.jira_information.get_jiras_from_python_files", return_value={"file.py": {"ABC-1", "ABC-2"}}
+    )
+
+    result = CliRunner().invoke(get_jira_mismatch, list(SCOPED_TOKEN_ARGS))
+
+    # A RequestException left unwrapped escapes the worker future as a traceback instead of the normal exit path.
+    assert isinstance(result.exception, SystemExit)
+    assert result.exit_code == 1
+    assert _logged(mock_logger, "exception") == []
+    aggregate = [message for message in _logged(mock_logger, "error") if "Following Jira ids failed" in message]
+    assert len(aggregate) == 1
+    # Reported per issue in the documented shape, with no status code to show, so the scan keeps accumulating.
+    assert aggregate[0].count("Jira connection failed (ConnectionError): Connection refused.") == 2
+    assert "status code" not in aggregate[0]
+
+
 def test_get_jira_mismatch_scan_survives_exhausted_retry(mocker):
     mock_logger = _patch_logger(mocker)
     mocker.patch.object(get_issue.retry, "sleep")
@@ -2408,7 +3834,7 @@ def test_get_jira_mismatch_scan_survives_exhausted_retry(mocker):
     assert _logged(mock_logger, "exception") == []
     aggregate = [message for message in _logged(mock_logger, "error") if "Following Jira ids failed" in message]
     assert len(aggregate) == 1
-    assert "ABC-500 JiraError status code: 500, details: Server error]" in aggregate[0]
+    assert "ABC-500 JiraError status code: 500, details: Server error." in aggregate[0]
 
 
 @pytest.mark.parametrize("status_code", [None, 500])
@@ -2429,6 +3855,76 @@ def test_get_jira_mismatch_non_auth_client_error_reports_cause(mocker, status_co
     assert "likely expired" not in logged
     assert "connection refused" in logged
     mock_get_jiras.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "exp",
+    [
+        pytest.param(requests.ConnectionError("Connection refused"), id="connection-error"),
+        pytest.param(requests.Timeout("timed out"), id="timeout"),
+    ],
+)
+def test_get_jira_mismatch_request_exception_during_construction_reports_outage(mocker, exp):
+    mock_logger = _patch_logger(mocker)
+    mocker.patch("apps.jira_utils.jira_information.get_util_config", return_value={})
+    mocker.patch("apps.jira_utils.jira_information.build_jira_client", side_effect=exp)
+    mock_get_jiras = mocker.patch("apps.jira_utils.jira_information.get_jiras_from_python_files", return_value={})
+
+    result = CliRunner().invoke(get_jira_mismatch, ["--cloud-id", CLOUD_ID, "--token", "t", "--check-auth"])
+
+    assert result.exit_code == 1
+    # A transport exception is an outage: one line, no traceback, no credential advice.
+    assert isinstance(result.exception, SystemExit)
+    assert _logged(mock_logger, "exception") == []
+    assert "Traceback" not in result.output
+    errors = _logged(mock_logger, "error")
+    assert len(errors) == 1
+    assert errors[0].startswith(f"Jira client construction failed ({type(exp).__name__}, status: None): ")
+    assert str(exp) in errors[0]
+    assert _hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT) == []
+    mock_get_jiras.assert_not_called()
+
+
+def test_get_jira_mismatch_request_exception_during_the_probe_reports_outage(mocker):
+    mock_logger = _patch_logger(mocker)
+    result, _, _ = _run_oauth_command(
+        mocker,
+        *SCOPED_TOKEN_ARGS,
+        "--check-auth",
+        # A raw requests error escapes _probe_credential, which only translates JIRAError.
+        myself_error=requests.ConnectionError("Name or service not known"),
+    )
+
+    assert result.exit_code == 1
+    assert _logged(mock_logger, "exception") == []
+    errors = _logged(mock_logger, "error")
+    assert len(errors) == 1
+    assert errors[0].startswith("Jira credential check failed (ConnectionError, status: None): ")
+    assert "Name or service not known" in errors[0]
+    assert _hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT) == []
+    assert [message for message in errors if "Jira authentication failed" in message] == []
+
+
+def test_scan_continues_when_the_probe_is_an_outage(mocker):
+    mock_logger = _patch_logger(mocker)
+    result, mock_jira_cls, mock_get_jira_information = _run_scan(
+        mocker,
+        SCOPED_TOKEN_ARGS,
+        issues=["ABC-1", "ABC-2"],
+        per_issue_status=401,
+        # An unreachable API is an outage, not a rejected credential.
+        myself_side_effect=requests.ConnectionError("Connection refused"),
+    )
+
+    assert result.exit_code == 1
+    # The scan is not aborted with a credential hint: the per-issue failures are aggregated instead.
+    assert mock_get_jira_information.call_count == 2
+    # The first 401 clears the cached verdict once, so the second issue reuses that probe rather than re-running it:
+    # one probe per scan, and the outage is still not hidden from the second issue.
+    assert mock_jira_cls.return_value.myself.call_count == 1
+    errors = _logged(mock_logger, "error")
+    assert _hint_logs(errors, AUTH_MODE_SERVICE_ACCOUNT) == []
+    assert [message for message in errors if "Following Jira ids failed" in message]
 
 
 def test_get_jira_mismatch_non_auth_client_error_record_is_bounded(mocker, caplog):
@@ -2517,15 +4013,3 @@ def test_get_jira_mismatch_auth_client_error_reports_hint(mocker, monkeypatch, s
 def test_browse_link_regex_hardening(jira_url, content, expected):
     jira_ids = get_jira_ids_from_file_content(file_content=content, issue_pattern=r"([A-Z]+-[0-9]+)", jira_url=jira_url)
     assert jira_ids == expected
-
-
-def test_all_python_files_skips_worktree_agent_and_build_trees(tmp_path):
-    for relative_path in ("pkg/a.py", ".worktrees/b/c.py", ".pi/tmp/d.py", "node_modules/e.py", "build/f.py"):
-        path = tmp_path / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("")
-
-    # A second checkout (.worktrees), an agent scratch tree and build output hold the same sources again, so the
-    # scan must see each real file once.
-    found = {os.path.relpath(path, tmp_path) for path in all_python_files(directory=tmp_path)}
-    assert found == {"pkg/a.py"}

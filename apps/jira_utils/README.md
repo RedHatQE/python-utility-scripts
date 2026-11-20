@@ -7,12 +7,20 @@ It looks for following patterns in files of a pytest repository:
     - pytest.mark.jira_utils(ABC-12345)  # when jira is in a marker
 ```
 
+The scan skips a directory by its **name**, never by a path substring, so a checkout living under e.g.
+`/tmp/build-tools/` is still scanned. Excluded names: `.git`, `.tox`, `.venv`, `venv`, `.pytest_cache`,
+`site-packages`, `.mypy_cache`, `.worktrees`, `.pi`, `node_modules`, `build`, `dist`.
+
 ## Usage
 
 ```bash
 pyutils-jira
 pyutils-jira --help
-JIRA_CLOUD_ID=<cloud-id> JIRA_TOKEN=<token> pyutils-jira --check-auth   # verify the credential before a scan
+
+# verify the credential before a scan; quote the values, unquoted <...> is a shell redirection
+export JIRA_CLOUD_ID="<cloud-id>"
+export JIRA_TOKEN="<token>"
+pyutils-jira --check-auth
 ```
 
 ## Authentication
@@ -41,7 +49,21 @@ OAuth 2.0 `client_id` + `client_secret` pair.
   `Invalid Jira cloud id (from --cloud-id/JIRA_CLOUD_ID/ATLASSIAN_OAUTH_CLOUD_ID/config 'cloud_id'): <cloud-id>. Pass --cloud-id "" to ignore it.`
   Passing an explicit empty `--cloud-id ""` wins over `JIRA_CLOUD_ID`/`ATLASSIAN_OAUTH_CLOUD_ID` and the `cloud_id`
   config key, and the utility falls back to `url` + `token`. Service-account auth is only fully off when `url` is
-  not a gateway url either - a `https://api.atlassian.com/ex/jira/` `url` still selects Bearer auth on its own;
+  not a gateway url either;
+- a gateway `url` selects Bearer auth because it carries the cloud id (`https://api.atlassian.com/ex/jira/<cloud_id>`).
+  A bare gateway url (`https://api.atlassian.com/ex/jira/`, no id) - and the bare gateway host
+  `https://api.atlassian.com` itself, with or without its trailing slash, which is recognised as a gateway url too -
+  is rejected with no cloud id resolved: the run
+  exits `1` before any request is made, with
+  `The supplied Jira API gateway url is missing its cloud id: append it, or pass --cloud-id (expected https://api.atlassian.com/ex/jira/<cloud-id>).`
+  An id segment that is present but the wrong shape (`/ex/jira/abc123`, an account id) gets its own message instead:
+  `Invalid Jira cloud id in the supplied gateway url: expected letters, digits and dashes, 8-64 characters.`
+  A path below the cloud id (`.../ex/jira/<cloud-id>/rest/api/2`) is ignored: the server is rebuilt as the canonical
+  gateway url, so the path python-jira appends itself is never doubled.
+  With a `cloud_id` set the bare prefix costs nothing for the API calls - `cloud_id` rebuilds the full gateway url
+  anyway - but it still decides browse-link matching: a bare gateway prefix, with or without its trailing slash, is
+  recognised as a gateway url, so links are then matched host-agnostically as `/browse/<KEY>` (see
+  "Browse link matching");
 - a non-gateway `url` supplied together with `cloud_id` is discarded and the discard is logged at `INFO`
   (`cloud_id provided, discarding supplied Jira url ... in favor of the API gateway url`);
 - `cloud: true` plus `user` does not switch the mode away from Bearer auth.
@@ -57,9 +79,11 @@ In service-account mode `url` and `user` are optional; only `token`, or the OAut
 pair, is required.
 
 Environment variables: `JIRA_SERVER_URL` (or `JIRA_URL`), `JIRA_TOKEN`, `JIRA_USER`, `JIRA_CLOUD_ID` (or
-`ATLASSIAN_OAUTH_CLOUD_ID`), `JIRA_SA_CLIENT_ID`, `JIRA_SA_CLIENT_SECRET`. The CLI options take precedence; an
-environment variable is used as the default of its CLI option, so it also overrides the config file entry for the
-same key. `cloud` has no environment variable, only `--cloud` or `cloud: true`. The two OAuth 2.0 credential variables
+`ATLASSIAN_OAUTH_CLOUD_ID`), `JIRA_SA_CLIENT_ID`, `JIRA_SA_CLIENT_SECRET`. `url`, `token` and `user` are
+`os.getenv()` defaults of their CLI option, so their environment variable also overrides the config file entry for
+the same key. `cloud_id` and the OAuth 2.0 pair are resolved per key instead, where the environment beats the config
+file but an explicitly empty option beats both (see "Precedence is per key"). `cloud` has no environment variable,
+only `--cloud` or `cloud: true`. The two OAuth 2.0 credential variables
 also accept the older aliases `ATLASSIAN_OAUTH_CLIENT_ID` and `JIRA_OAUTH_CLIENT_SECRET`; the `JIRA_SA_*` pair wins
 when both are set. The aliases keep the older mixed prefixes for compatibility with the existing rootcoz/tooling
 convention, while the primary `JIRA_SA_*` names follow this repo's scheme.
@@ -80,7 +104,16 @@ and ignore `cloud`/`user`. They differ only in where the bearer value comes from
 In service-account mode a healthy scan logs exactly one `INFO` line naming the resolved flavour and the server - the
 `Log line` above. The cloud id is masked in every log line and message: only the resolved flavour and the masked
 gateway url `https://api.atlassian.com/ex/jira/<cloud-id>` are printed, never the id itself - the real id and url are
-still what the utility uses to talk to Jira. Flavour B adds a second `INFO` line when it mints (`Minted an Atlassian OAuth 2.0 access token, valid for <n> seconds`).
+still what the utility uses to talk to Jira. A `user:password@` component is stripped the same way, with one split:
+a url passed on its own (`--url`, a server named in a message, the probe url) always loses its userinfo - parsed
+whole, or, when the authority does not parse at all (an unmatched bracket), matched over the authority alone - while
+inside free-form text (a log line, an error body) a url ends at whitespace or at a quote/bracket, so a credential
+containing one of those cannot be delimited there and is not stripped from that text. The `jira`/`urllib3`
+transport logs - which quote the request url verbatim - are filtered too, in
+message and traceback alike. The configured (or minted) bearer token is redacted there as `***`, and only when it is
+at least 8 characters long so a dummy value cannot corrupt words. The filter is installed once at start-up, when any
+of the three is present: a resolved cloud id, a real token, or a url carrying a userinfo.
+Flavour B adds a second `INFO` line when it mints (`Minted an Atlassian OAuth 2.0 access token, valid for <n> seconds`).
 A site `url` discarded because `cloud_id` is set is also logged at `INFO`. An OAuth 2.0 credential that is ignored
 (incomplete pair, or a complete pair with no resolvable cloud id) yields one `WARNING`, naming both what was ignored
 and the credential actually used; none of these notices is an error.
@@ -130,7 +163,7 @@ renders `... (HTTP <status> - the response payload has no access_token)`.
 #### Where the cloud id comes from
 
 ```bash
-curl https://<site>.atlassian.net/_edge/tenant_info   # -> {"cloudId": "4a4f8f8f-1234-5678-9abc-def012345678", ...}
+curl "https://<site>.atlassian.net/_edge/tenant_info"   # -> {"cloudId": "4a4f8f8f-1234-5678-9abc-def012345678", ...}
 ```
 
 That `cloudId` is a plain UUID. `ATLASSIAN_OAUTH_CLOUD_ID` is accepted as an alternative to `JIRA_CLOUD_ID` for
@@ -138,26 +171,88 @@ this value.
 
 > **Not a cloud id:** an Atlassian *account id* (shape `digits:uuid`, for example `712020:f0a60b32-...`, as seen
 > in profile URLs) is a user identity. As `--cloud-id` it fails the validation above (no colons allowed), and
-> behind a gateway `url` the gateway answers with a confusing `404`. `JIRA_SA_CLIENT_ID` likewise must be
+> behind a gateway `url` the run exits `1` before any request is made with
+> `Invalid Jira cloud id in the supplied gateway url: expected letters, digits and dashes, 8-64 characters.` - the
+> id segment of a gateway url must itself be a valid cloud id. `JIRA_SA_CLIENT_ID` likewise must be
 > the OAuth client id of the service account, not an account id.
 
 ### Verify the credential with `--check-auth`
 
 `--check-auth` performs no scan. It builds the client, calls `/myself` and prints the resolved mode, server URL
-and identity (`displayName`, `emailAddress`, `accountId`) without revealing the token. It exits `0` on success
-and `1` on failure, so it can be used as a pre-flight check before a long scan.
+and identity (`displayName`, `emailAddress`, `accountId`) without revealing the token, so it can be used as a
+pre-flight check before a long scan.
 
-OAuth 2.0 service-account credentials usually carry only `read:jira-work`/`write:jira-work`, and `/myself` is not
-part of those scopes. When `/myself` answers `401`/`403` and a client secret is in play, the check falls back to
-the project endpoint; if that succeeds the run exits `0` and the success log reports the project visibility instead
-of an identity:
+| Exit | Meaning | Line it prints |
+|---|---|---|
+| `0` | The credential is verified: `/myself` answered, or the project endpoint returned a non-empty list that the same request without an `Authorization` header does not also return | `Jira authentication OK - ...` |
+| `1` | The credential is rejected: a `401`/`403` from `/myself` (Data Center PAT, cloud basic auth), or from **both** probe endpoints (Bearer) | `Jira authentication failed (mode: ..., server: ...): <status> <detail>` plus the credential hint |
+| `1` | The probe could not decide: an outage, an unreachable API, an empty project list, or a project list that is also readable anonymously | `Jira credential check failed (<ErrorType>, status: <status>): <detail>` or `Jira credential could not be verified: ...` |
+
+Service-account credentials - the pre-minted scoped API token as much as the OAuth 2.0 pair - usually carry only
+`read:jira-work`/`write:jira-work`, and `/myself` is not part of those scopes. When `/myself` answers `401`/`403`
+the check falls back to the project endpoint, for either flavour and without needing a client secret. A non-empty
+project list only verifies the credential when the same request without a credential does not return it as well, in
+which case the success log reports the project visibility instead of an identity:
 
 ```text
 Jira authentication OK - mode: service-account, server: https://api.atlassian.com/ex/jira/<cloud-id>, service account: project visibility verified; the current-user endpoint (/myself) is unavailable for this credential's scopes
 ```
 
-A `401`/`403` from the Jira API means Jira rejected the credential itself - or, for a scope-limited OAuth 2.0
-credential, that both `/myself` and the project fallback were rejected. Common causes:
+The fallback is a second opinion rather than a certainty, so it can be inconclusive in two ways.
+
+In service-account mode a non-empty project list is only evidence when the same request without the credential does
+not return it as well, so the check repeats the call once with no `Authorization` header, against the same project
+path and API version the authenticated call used. Only a genuinely different answer counts as evidence: an empty
+list, a non-OK status or a non-JSON body all mean "not anonymously readable", so the authenticated non-empty list
+stands and the check exits `0`. If that header-less call returns a non-empty project list instead, the outcome is
+inconclusive - a dead bearer would look exactly as healthy - and the check exits `1`:
+
+```text
+Jira credential could not be verified: the project endpoint returns the same non-empty project list without an Authorization header, so a non-empty list does not prove this credential is honoured.
+```
+
+That cross-check is a tripwire rather than the general verdict: in service-account mode the server is always the
+canonical API gateway url, so the header-less probe can only ever ask the gateway's project path - it cannot fire
+against Atlassian with the current server resolution, and the tests reach the branch by mocking the premise. Every
+scope-limited `--check-auth` still pays one extra header-less request for it, which a proxy or a
+TLS-intercepting environment may turn into a `WARNING` (a probe that could not run counts as no evidence).
+
+In service-account mode an empty project list verifies nothing either (the project endpoint is also readable
+anonymously), so it exits `1` without claiming success:
+
+```text
+Jira credential could not be verified: the current-user endpoint (/myself) is out of this credential's scopes and no projects are visible, so neither endpoint proves the credential is valid.
+```
+
+When the probe fails for a non-auth reason - any status that is not `401`/`403` (a `5xx`, a `404`, a throttled
+`429`) or an unreachable API (a connection error or a timeout, which surfaces as a `requests` exception rather than
+a `JIRAError`) - the outage is reported as an outage, not as a rejected credential, and the check exits `1` without
+the credential-failure hint:
+
+```text
+Jira credential check failed (<ErrorType>, status: <status>): <detail>
+```
+
+`<ErrorType>` is the exception class name (`JIRAError`, `ConnectionError`, `Timeout`, ...) and `<status>` is the HTTP
+status of the answer, or `None` when the request never got one (a connection error, a timeout). The client
+construction path reports an unreachable server the same way, under `Jira client construction failed (...)`. A server
+url that cannot be parsed at all is rejected before that, on one line
+(`Invalid Jira server url (unparseable, e.g. an unbracketed IPv6 host): <url>`), so a genuine `ValueError` from inside
+the client keeps its traceback instead of being reported as an outage.
+
+An unreachable anonymous probe counts as no evidence of anonymous readability, so it does not undo a
+project-visibility verdict, and a probe that could not run at all is logged at `WARNING` (a degraded guard is not a
+detail). The header-less probe itself is built to stay header-less: the url it sends has its `user:password@`
+component stripped, the `Authorization` header requests adds from a `~/.netrc` entry for the host is dropped once the
+request is prepared, and a redirect is not followed (a redirect hop runs `rebuild_auth()`, which would re-inject that
+credential). The request still merges the environment, so `REQUESTS_CA_BUNDLE`/`CURL_CA_BUNDLE` and the proxy
+variables are honoured: discarding them would silently turn the guard into a no-op behind a mandatory proxy or an
+env CA bundle.
+
+In service-account (Bearer) mode - the only mode with two probe endpoints - a `401`/`403` from **both** endpoints
+means Jira rejected the credential itself, and only then is the credential-failure hint printed. Data Center PAT and
+cloud basic auth have no project-endpoint fallback, so a `401`/`403` from `/myself` is the verdict there. Common
+causes:
 
 - a `cloud_id` that does not match the site the credential is scoped to;
 - a token or credential without the scopes the utility needs to read issues;
@@ -170,19 +265,41 @@ Jira call (see the mint-failure paragraph above), so it never produces a `/mysel
 Pass the token through the environment rather than on the command line:
 
 ```bash
-JIRA_CLOUD_ID=<cloud-id> JIRA_TOKEN=<token> pyutils-jira --check-auth
+export JIRA_CLOUD_ID="<cloud-id>"
+export JIRA_TOKEN="<token>"
+pyutils-jira --check-auth
 ```
 
 Command-line arguments are visible to other users in `ps` output and are appended to your shell history, so use
 `--token` only when the environment is not an option.
 
 During a scan a single issue returning `401`/`403` is not taken as proof: the utility runs the same credential
-probe once (the verdict is cached, so it happens at most once per run). If that probe also fails with `401`/`403`
-the credential is genuinely rejected - the hint is logged once at `ERROR` and the run exits `1` without a per-issue
-report. If the probe succeeds the failure is a per-issue permission problem: the scan continues, the failures are
-aggregated at the end and the run still exits `1`. The probe is the same one `--check-auth` uses, including the
-project-endpoint fallback for a scope-limited OAuth 2.0 credential, so a credential that passes `--check-auth` does
-not abort a scan.
+probe (the verdict is cached per client and flavour, so repeated failures reuse it instead of re-probing). The
+first per-issue `401` clears that cache, once per scan: the scan re-probes at most once, which is enough to catch a
+bearer that expired mid-scan without probing again for every failing issue, and the fresh verdict is reused for the
+rest of the scan.
+
+A per-issue transport failure (a connection error, a timeout, an exhausted retry) does not abort the scan either: it
+is rendered as one finding of its own, `"<KEY> Jira connection failed (<ErrorType>): <detail>"`, and every such
+finding reaches the aggregate report. A scan retries a `5xx` and a call that got no response at all; it leaves a
+`429` to python-jira's `ResilientSession`, which already retries a `429` (and a `503` carrying `Retry-After`)
+internally, up to 3 times, with `10 * 2**counter` seconds capped at 60 s plus 0.5-1.0 jitter and `Retry-After`
+honoured - a second layer on top would add tens of seconds to minutes per throttled issue, serially. A `503`
+carrying `Retry-After` is still retried by both layers here; a `503` without one is a `5xx`, so it is retried by
+this layer.
+
+In service-account (Bearer) mode - the only mode with two probe endpoints - a `401`/`403` from **both** of them means
+the credential is genuinely rejected. A Data Center PAT or cloud basic auth has no project-endpoint fallback: its
+probe is called without the service-account path, so a single `401`/`403` from `/myself` is already the verdict.
+Either way the hint is logged once at `ERROR` and the run exits `1` without a per-issue report.
+
+Otherwise the failure is treated as a per-issue permission problem: the scan continues, the failures are
+aggregated at the end and the run still exits `1`. That covers a probe that succeeds and an inconclusive one alike
+(a project endpoint outage or an empty project list): inconclusive is not verification, but it does not abort a
+scan either. The scan runs the same two-endpoint probe `--check-auth` uses, including the project-endpoint fallback
+for a scope-limited service-account credential (either flavour) but not its extra anonymous cross-check, so a
+credential that passes `--check-auth` does not abort a scan. An unreachable API during that probe is an outage rather
+than a rejection (it is logged at `WARNING`), so it likewise does not abort the scan with a credential hint.
 
 ### Example: Data Center PAT (default)
 
@@ -213,7 +330,9 @@ pyutils-jira:
 Equivalent from the CLI:
 
 ```bash
-JIRA_CLOUD_ID=4a4f8f8f-1234-5678-9abc-def012345678 JIRA_TOKEN="$JIRA_TOKEN" pyutils-jira --check-auth
+export JIRA_CLOUD_ID="4a4f8f8f-1234-5678-9abc-def012345678"
+export JIRA_TOKEN="<ATST-token>"
+pyutils-jira --check-auth
 ```
 
 ### Example: Atlassian Cloud service account, OAuth 2.0 client credentials
@@ -225,11 +344,13 @@ pyutils-jira:
   client_secret: ATOA...
 ```
 
-Equivalent from the CLI, with the secret kept out of `ps` and the shell history:
+Equivalent from the CLI. The secret is exported into the environment rather than passed on the command line, so it
+stays out of `ps` output (the `export` line itself still lands in your shell history):
 
 ```bash
-JIRA_CLOUD_ID=4a4f8f8f-1234-5678-9abc-def012345678 \
-JIRA_SA_CLIENT_ID=<oauth client id> JIRA_SA_CLIENT_SECRET="$JIRA_SA_CLIENT_SECRET" \
+export JIRA_CLOUD_ID="4a4f8f8f-1234-5678-9abc-def012345678"
+export JIRA_SA_CLIENT_ID="<oauth-client-id>"
+export JIRA_SA_CLIENT_SECRET="<atoa-client-secret>"
 pyutils-jira --check-auth
 ```
 
@@ -264,10 +385,13 @@ Precedence is per key:
   `skip_project_ids` resolves as `skip_projects or config_dict.get("skip_project_ids", [])` with a click default of
   `None`: an unset `--skip-projects` falls back to the config key, but an explicitly empty value becomes `[""]`
   (truthy, and its empty prefix matches every issue), so it silently disables the target-version check - omit it);
-- `client_id` and `client_secret` resolve as `cli_value or config_dict.get(key, "")`; their environment variables
-  (`JIRA_SA_CLIENT_ID`, `JIRA_SA_CLIENT_SECRET`, or the aliases `ATLASSIAN_OAUTH_CLIENT_ID`,
-  `JIRA_OAUTH_CLIENT_SECRET`) arrive as the CLI option defaults, exactly like
-  `JIRA_TOKEN`, so the order stays CLI/env then config file;
+- `client_id` and `client_secret` resolve per key, and the option state decides - the same shape as `--cloud-id`:
+  an explicitly passed `--client-id`/`--client-secret` wins **even when it is empty** (the empty pair is the
+  documented opt-out, and it beats the environment and the config file alike); otherwise the environment variable
+  (`JIRA_SA_CLIENT_ID`/`JIRA_SA_CLIENT_SECRET`, or the aliases `ATLASSIAN_OAUTH_CLIENT_ID`/`JIRA_OAUTH_CLIENT_SECRET`,
+  the `JIRA_SA_*` name winning when both are set); otherwise the config key. Unlike `token`/`url`, the OAuth pair is
+  therefore *not* an `os.getenv()` option default - both defaults are `None`, so "option not passed" stays
+  distinguishable from "option passed empty";
 - `cloud` resolves as `cloud if cloud is not None else config_dict.get("cloud", False)`. `--cloud` is a flag whose
   default is `None` and it has no environment variable, so it can enable cloud basic auth but cannot disable a
   `cloud: true` coming from the config file;

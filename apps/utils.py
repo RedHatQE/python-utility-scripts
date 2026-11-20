@@ -76,11 +76,16 @@ class ListParamType(click.ParamType):
 
 def all_python_files(directory: click.Path | None = None) -> Iterable[str]:
     """
-    Get all python files from current directory and subdirectories
+    Get all python files from current directory and subdirectories.
+
+    Directories whose `name` is in the exclusion list are pruned from the walk, so the same sources are not scanned
+    again from other checkouts, virtualenvs or build outputs. Only the directory name is compared, never the path, so
+    a checkout living under e.g. /tmp/build-tools still gets scanned.
     """
-    exclude_dirs = [
+    exclude_dirs = {
         ".tox",
         "venv",
+        ".venv",
         ".pytest_cache",
         "site-packages",
         ".git",
@@ -92,12 +97,11 @@ def all_python_files(directory: click.Path | None = None) -> Iterable[str]:
         "node_modules",
         "build",
         "dist",
-    ]
+    }
     target = str(directory) if directory else os.path.abspath(os.curdir)
 
-    for root, _, files in os.walk(target):
-        if [_dir for _dir in exclude_dirs if _dir in root]:
-            continue
+    for root, dirnames, files in os.walk(target):
+        dirnames[:] = [dirname for dirname in dirnames if dirname not in exclude_dirs]
         for filename in files:
             if filename.endswith(".py"):
                 yield os.path.join(root, filename)
