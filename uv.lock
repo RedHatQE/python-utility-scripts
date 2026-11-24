@@ -1243,7 +1243,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/49/24/5c9238aa424a4af9c
 
 [[package]]
 name = "python-utility-scripts"
-version = "2.0.7"
+version = "2.1.0"
 source = { editable = "." }
 default-groups = ["dev", "test"]
 dependencies = [
