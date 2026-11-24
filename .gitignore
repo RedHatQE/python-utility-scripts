@@ -167,3 +167,10 @@ CLAUDE.md
 .cursorrules
 .claude/
 GEMINI.md
+
+# Local tooling artifacts (never committed)
+node_modules/
+package.json
+package-lock.json
+.trail/
+.python-version

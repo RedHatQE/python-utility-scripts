@@ -19,6 +19,7 @@ dependencies = [
   "pyhelper-utils>=2,<3",
   "ast-comments>=1.2.2",
   "click (>=8.1.7)",
+  "requests>=2.32,<3",
 ]
 
 [[project.authors]]
